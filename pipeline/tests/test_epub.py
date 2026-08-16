@@ -7,8 +7,13 @@ from molcajete_prep.epub import (
     normalize_text,
     paragraphs_from_html,
     split_html_on_headings,
+    strip_gutenberg_boilerplate,
     title_from_html,
 )
+
+
+def chapter(*paragraphs: str, title: str = "Capítulo") -> ChapterSource:
+    return ChapterSource(title=title, paragraphs=tuple(paragraphs))
 
 
 def test_extracts_one_chapter_per_spine_document(fixture_epub):
@@ -108,3 +113,65 @@ class TestSplitOnHeadings:
     def test_title_from_html_reads_the_first_heading(self):
         assert title_from_html("<body><h3>Capítulo 4</h3><p>x</p></body>") == "Capítulo 4"
         assert title_from_html("<body><p>x</p></body>") is None
+
+
+class TestGutenbergBoilerplate:
+    """Project Gutenberg's licence is ~2,900 tokens of English legal prose.
+
+    Left in, it becomes a chapter of the book and its words become Spanish
+    "vocabulary" — 'accepting', 'paragraph', 'trademark' all turned up in the
+    lexicon of the first real build.
+    """
+
+    START = "*** START OF THE PROJECT GUTENBERG EBOOK LAS NOCHES ***"
+    END = "*** END OF THE PROJECT GUTENBERG EBOOK LAS NOCHES ***"
+
+    def test_text_before_the_start_marker_is_dropped(self):
+        chapters = [chapter("Produced by a volunteer.", self.START, "El caballo subió.")]
+
+        stripped = strip_gutenberg_boilerplate(chapters)
+
+        assert stripped == [chapter("El caballo subió.")]
+
+    def test_text_after_the_end_marker_is_dropped(self):
+        chapters = [chapter(self.START, "El caballo subió.", self.END, "Section 1.")]
+
+        stripped = strip_gutenberg_boilerplate(chapters)
+
+        assert stripped == [chapter("El caballo subió.")]
+
+    def test_whole_chapters_after_the_end_marker_are_dropped(self):
+        chapters = [
+            chapter(self.START, "El caballo subió."),
+            chapter(self.END, "THE FULL PROJECT GUTENBERG LICENSE"),
+            chapter("More licence text."),
+        ]
+
+        stripped = strip_gutenberg_boilerplate(chapters)
+
+        assert stripped == [chapter("El caballo subió.")]
+
+    def test_the_markers_themselves_are_not_kept_as_prose(self):
+        chapters = [chapter(self.START, "El caballo subió.")]
+
+        stripped = strip_gutenberg_boilerplate(chapters)
+
+        assert all("PROJECT GUTENBERG" not in p for c in stripped for p in c.paragraphs)
+
+    def test_an_end_marker_without_a_start_marker_still_truncates(self):
+        chapters = [chapter("El caballo subió.", self.END, "Section 1.")]
+
+        stripped = strip_gutenberg_boilerplate(chapters)
+
+        assert stripped == [chapter("El caballo subió.")]
+
+    def test_a_book_with_no_markers_is_untouched(self):
+        chapters = [chapter("El caballo subió."), chapter("La sierra calló.")]
+
+        assert strip_gutenberg_boilerplate(chapters) == chapters
+
+    def test_the_fixture_epub_is_unaffected(self, fixture_epub):
+        with_stripping = extract_chapters(str(fixture_epub))
+        without = extract_chapters(str(fixture_epub), keep_boilerplate=True)
+
+        assert with_stripping == without

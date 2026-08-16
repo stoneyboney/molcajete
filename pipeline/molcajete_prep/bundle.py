@@ -129,12 +129,15 @@ def build_bundle(
     known_lemmas: frozenset[str] = frozenset(),
     options: ClassificationOptions = ClassificationOptions(),
     split_on_heading: bool = False,
+    keep_boilerplate: bool = False,
 ) -> BuildResult:
     """Read an EPUB and produce a validated `schemaVersion: 1` bundle."""
     epub_path = Path(epub_path)
     metadata = book_metadata(str(epub_path))
     sources: list[ChapterSource] = extract_chapters(
-        str(epub_path), split_on_heading=split_on_heading
+        str(epub_path),
+        split_on_heading=split_on_heading,
+        keep_boilerplate=keep_boilerplate,
     )
     if not sources:
         raise ValueError(f"{epub_path} yielded no chapters with prose in them")

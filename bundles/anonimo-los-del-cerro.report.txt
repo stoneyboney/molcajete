@@ -1,0 +1,45 @@
+Molcajete bundle report
+Book: Los del cerro — Anónimo (anonimo-los-del-cerro)
+Built: 2026-08-16T22:37:39  ·  schemaVersion 1  ·  Bundle: 0.0 MB
+Word tokens: 111  ·  Chapters: 3
+
+LEMMAS
+  Total distinct lemmas             76   (lexicon 72 + 4 names)
+  Teach                             69   ( 90.8%)
+  Gloss only                         3   (  3.9%)
+  Skipped (PROPN)                    4   (  5.3%)
+
+  Teach breakdown (first matching rule):
+    bookCount >= 3                           9
+    zipf >= 3.5                             60
+    mexicanism && bookCount >= 2             0   <- always 0 until Phase 2 flags mexicanisms
+
+TOP 20 TEACH LEMMAS BY BOOK COUNT
+    1  m0027  el                 DET    bookCount    15   zipf 7.45   first ch. 0
+    2  m0011  caballo            NOUN   bookCount     3   zipf 4.56   first ch. 0
+    3  m0021  de                 ADP    bookCount     3   zipf 7.81   first ch. 0
+    4  m0022  del                ADP    bookCount     3   zipf 7.01   first ch. 1
+    5  m0031  fusil              NOUN   bookCount     3   zipf 3.60   first ch. 0
+    6  m0038  jacal              NOUN   bookCount     3   zipf 1.69   first ch. 0
+    7  m0059  sierra             NOUN   bookCount     3   zipf 4.48   first ch. 0
+    8  m0062  su                 DET    bookCount     3   zipf 6.78   first ch. 0
+    9  m0069  y                  CCONJ  bookCount     3   zipf 7.44   first ch. 0
+   10  m0014  camino             NOUN   bookCount     2   zipf 5.28   first ch. 0
+   11  m0018  con                ADP    bookCount     2   zipf 6.97   first ch. 1
+   12  m0060  soldado            NOUN   bookCount     2   zipf 4.38   first ch. 0
+   13  m0000  a                  ADP    bookCount     1   zipf 7.36   first ch. 2
+   14  m0001  abajo              ADV    bookCount     1   zipf 4.98   first ch. 1
+   15  m0002  abandonado         ADJ    bookCount     1   zipf 4.22   first ch. 2
+   16  m0003  agarrar            VERB   bookCount     1   zipf 3.97   first ch. 0
+   17  m0004  agua               NOUN   bookCount     1   zipf 5.49   first ch. 2
+   18  m0005  al                 ADP    bookCount     1   zipf 6.74   first ch. 1
+   19  m0006  alcanzar           VERB   bookCount     1   zipf 4.67   first ch. 1
+   20  m0007  aquel              DET    bookCount     1   zipf 4.87   first ch. 1
+
+DIAGNOSTICS
+  Chapters whose teach set exceeds the 18-card cap: 3 of 3
+    (Phase 4 splits these into segments; not enforced here)
+  Lemmas with zipf 0.00: 1 of 72 — wordfreq has never seen these,
+    so they are probably lemmatization noise rather than vocabulary:
+    'huizach'
+  No known-lemma seed applied: these are unseeded worst-case counts.

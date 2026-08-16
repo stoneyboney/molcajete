@@ -129,7 +129,35 @@ Code, comments, commit messages, and this documentation are in English.
 
 ## Current phase
 
-**Phase 1 — Prep pipeline skeleton.**
-Target: `Los de abajo` (Mariano Azuela, Project Gutenberg, public domain) parsed into a valid `schemaVersion: 1` bundle with chapters, tokens, lemmas, and `wordfreq` Zipf scores. No glosses yet, no app yet.
+**Phase 1 — Prep pipeline skeleton. Complete.**
+
+`pipeline/build_bundle.py` turns a DRM-free Spanish EPUB into a validated
+`schemaVersion: 1` bundle plus a plain-text report. Verified end to end on a
+115,765-token Spanish novel in under nine seconds. `uv sync && uv run pytest`
+in `/pipeline`.
+
+Three things carried forward:
+
+1. **`Los de abajo` is not on Project Gutenberg.** SPEC §13.4 is wrong: Gutenberg
+   has only the 1929 English translation. The Spanish original is absent from
+   Gutenberg, Spanish Wikisource and textos.info, and the Internet Archive copies
+   are DRM-locked scans of in-copyright modern editions. Pipeline development
+   therefore used another Spanish EPUB. Drop a DRM-free `Los de abajo` into
+   `pipeline/sources/` whenever one turns up; nothing in the pipeline is
+   book-specific. See `pipeline/README.md`.
+2. **The §5 `zipf >= 3.5` rule teaches function words.** Unseeded, the top of
+   every teach set is `el`, `de`, `y`, `que`. SPEC §8 anticipates this and
+   answers it with Anki seeding in Phase 5 — but if Phase 4 arrives first, the
+   teaching session will be unusable without either the seed or a rule excluding
+   closed-class parts of speech. Not decided; do not invent a rule silently.
+3. **`es_core_news_sm` fabricates roughly 10% of its lemmas.** Words wordfreq has
+   never seen — `acaeceír`, `abrasadorar`, and multi-word output like
+   `abalanzar él` for reflexives. Phase 2 should not pay to gloss those. The
+   report's zipf-0.00 diagnostic is the measurement; compare against
+   `es_core_news_md` before committing to a glossing pass.
+
+**Next: Phase 2 — Glosses.**
+Wiktionary extracts from kaikki.org, DE and EN, with a Claude batch fallback.
+Success: >95% of teach-set lemmas have a German gloss.
 
 Update this section when a phase completes.

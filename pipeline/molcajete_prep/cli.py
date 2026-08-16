@@ -51,6 +51,12 @@ def build_parser() -> argparse.ArgumentParser:
         "several chapters into one file",
     )
     parser.add_argument(
+        "--keep-boilerplate",
+        action="store_true",
+        help="keep text outside Project Gutenberg's START/END markers, which is "
+        "otherwise stripped as licence text",
+    )
+    parser.add_argument(
         "--pretty",
         action="store_true",
         help="indent the JSON for reading by eye (larger file)",
@@ -98,6 +104,7 @@ def main(argv: list[str] | None = None) -> int:
         known_lemmas=load_known_lemmas(args.known),
         options=options,
         split_on_heading=args.split_on_heading,
+        keep_boilerplate=args.keep_boilerplate,
     )
 
     if args.report_only:

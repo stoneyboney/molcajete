@@ -110,6 +110,54 @@ def split_html_on_headings(html: str) -> list[tuple[str | None, str]]:
     return populated or [(None, html)]
 
 
+# Project Gutenberg wraps every text in these markers. Everything outside them is
+# the licence and the transcriber's notes: thousands of tokens of English legal
+# prose that would otherwise become Spanish "vocabulary", complete with its own
+# chapter in the reader.
+_GUTENBERG_START = re.compile(r"\*\*\*\s*START OF (THE|THIS) PROJECT GUTENBERG", re.I)
+_GUTENBERG_END = re.compile(r"\*\*\*\s*END OF (THE|THIS) PROJECT GUTENBERG", re.I)
+
+
+def strip_gutenberg_boilerplate(chapters: list[ChapterSource]) -> list[ChapterSource]:
+    """Keep only what lies between Project Gutenberg's START and END markers.
+
+    A no-op on EPUBs that carry no markers, so it is safe to run unconditionally.
+    """
+    if not any(
+        _GUTENBERG_START.search(paragraph) or _GUTENBERG_END.search(paragraph)
+        for chapter in chapters
+        for paragraph in chapter.paragraphs
+    ):
+        return chapters
+
+    kept: list[ChapterSource] = []
+    started = not any(
+        _GUTENBERG_START.search(paragraph)
+        for chapter in chapters
+        for paragraph in chapter.paragraphs
+    )
+    finished = False
+
+    for chapter in chapters:
+        paragraphs: list[str] = []
+        for paragraph in chapter.paragraphs:
+            if _GUTENBERG_END.search(paragraph):
+                finished = True
+                break
+            if _GUTENBERG_START.search(paragraph):
+                started = True
+                continue
+            if started:
+                paragraphs.append(paragraph)
+
+        if paragraphs:
+            kept.append(ChapterSource(title=chapter.title, paragraphs=tuple(paragraphs)))
+        if finished:
+            break
+
+    return kept
+
+
 def _toc_titles(book: epub.EpubBook) -> dict[str, str]:
     """Map document filename to its table-of-contents title.
 
@@ -159,11 +207,13 @@ def extract_chapters(
     epub_path: str,
     *,
     split_on_heading: bool = False,
+    keep_boilerplate: bool = False,
 ) -> list[ChapterSource]:
     """Read an EPUB into ordered chapters.
 
     Documents that yield no prose (covers, blank pages, pure navigation) are
-    dropped rather than emitted as empty chapters.
+    dropped rather than emitted as empty chapters, and Project Gutenberg's
+    licence is stripped unless `keep_boilerplate` says otherwise.
     """
     book = epub.read_epub(epub_path)
     toc_titles = _toc_titles(book)
@@ -186,7 +236,9 @@ def extract_chapters(
             title = section_title or document_title or f"Capítulo {len(chapters) + 1}"
             chapters.append(ChapterSource(title=title, paragraphs=tuple(paragraphs)))
 
-    return chapters
+    if keep_boilerplate:
+        return chapters
+    return strip_gutenberg_boilerplate(chapters)
 
 
 def book_metadata(epub_path: str) -> dict[str, str]:
