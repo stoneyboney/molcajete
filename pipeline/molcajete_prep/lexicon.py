@@ -90,10 +90,17 @@ class Lexicon:
         return self.keys_by_identity.get((token.lemma, self.effective_pos(token)))
 
     def effective_pos(self, token: Token) -> str:
-        """The token's part of speech after PROPN mis-tags are resolved."""
+        """The token's part of speech after PROPN mis-tags are resolved.
+
+        A confirmed name keeps PROPN: the reader reads this field to decide that
+        a word needs no gloss, so demoting Demetrio to NOUN would leave it
+        looking like ordinary vocabulary whose lexicon entry had gone missing.
+        """
         pos = token.pos or ""
         if pos != "PROPN":
             return pos
+        if (token.lemma or "") in self.proper_noun_lemmas:
+            return "PROPN"
         return self.rescued_pos.get(token.lemma or "", "NOUN")
 
     def entries_for_classification(self) -> dict[LemmaKey, LexiconEntry]:
