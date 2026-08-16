@@ -1,0 +1,21 @@
+# macOS
+.DS_Store
+
+# Source texts. DRM-free EPUBs live here and are never committed.
+pipeline/sources/
+
+# Generated bundles and reports, except the committed test fixture.
+bundles/*
+!bundles/.gitkeep
+!bundles/fixture.molcajete.json
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+*.egg-info/
+
+# Node (Phase 3 onwards)
+node_modules/
+dist/
