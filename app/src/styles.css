@@ -1,0 +1,73 @@
+@import 'tailwindcss';
+
+/* ---------------------------------------------------------------------------
+   Palette. Warm on both ends — pure white glares under a reading lamp and pure
+   black smears on OLED. Defined as custom properties rather than Tailwind
+   colours so `@media (prefers-color-scheme)` can swap them in one place, and so
+   Phase 6 can retune the whole app from this file.
+   --------------------------------------------------------------------------- */
+
+:root {
+  color-scheme: light dark;
+
+  --paper: #fbf7f0;
+  --paper-raised: #fffdf9;
+  --ink: #1f1b16;
+  --ink-muted: #6b6154;
+  --ink-faint: #9a8f7f;
+  --rule: #e4dccd;
+  --accent: #a8543a;
+  --scrim: rgb(31 27 22 / 0.32);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --paper: #14120f;
+    --paper-raised: #1e1b17;
+    --ink: #e9e3d7;
+    --ink-muted: #a09786;
+    --ink-faint: #6f6759;
+    --rule: #302b24;
+    --accent: #d08b6f;
+    --scrim: rgb(0 0 0 / 0.5);
+  }
+}
+
+/* `inline` keeps the utilities pointing at the custom property instead of
+   copying its value, which is what lets the media query above take effect. */
+@theme inline {
+  --color-paper: var(--paper);
+  --color-paper-raised: var(--paper-raised);
+  --color-ink: var(--ink);
+  --color-ink-muted: var(--ink-muted);
+  --color-ink-faint: var(--ink-faint);
+  --color-rule: var(--rule);
+  --color-accent: var(--accent);
+
+  --font-serif: ui-serif, Georgia, 'Iowan Old Style', 'Times New Roman', serif;
+  --font-sans:
+    ui-sans-serif, -apple-system, 'Helvetica Neue', system-ui, sans-serif;
+}
+
+@layer base {
+  html {
+    background: var(--paper);
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    margin: 0;
+    min-height: 100dvh;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--font-sans);
+    /* No 300 ms tap delay, and no double-tap-to-zoom swallowing word taps. */
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  button {
+    font: inherit;
+    color: inherit;
+  }
+}

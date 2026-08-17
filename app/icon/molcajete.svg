@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <!-- Source of the home-screen icon. A molcajete seen from the side: the
+       elliptical rim, the bowl, three stubby legs. Two flat colours, no
+       gradients, because it is read at 60 px on a home screen.
+       Rasterised by icon/build-icons.sh; the PNGs in public/icons are
+       committed so a clone needs no image tooling. -->
+  <rect width="512" height="512" fill="#a8543a"/>
+  <g fill="#fbf7f0">
+    <rect x="154" y="310" width="44" height="70" rx="21"/>
+    <rect x="234" y="326" width="44" height="56" rx="21"/>
+    <rect x="314" y="310" width="44" height="70" rx="21"/>
+    <path d="M106,168 C106,278 162,332 256,332 C350,332 406,278 406,168 A150,36 0 0 0 106,168 Z"/>
+  </g>
+  <ellipse cx="256" cy="168" rx="122" ry="26" fill="#a8543a"/>
+</svg>
