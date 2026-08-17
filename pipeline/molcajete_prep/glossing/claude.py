@@ -28,7 +28,7 @@ from __future__ import annotations
 import json
 import time
 from collections.abc import Iterable, Iterator, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
 from molcajete_prep.glossing.models import Gloss, GlossSource, normalize_gloss
@@ -38,8 +38,13 @@ from molcajete_prep.glossing.prompts import (
     SYSTEM_PROMPT,
     render_batch,
 )
-
-Identity = tuple[str, str]
+from molcajete_prep.glossing.provider import (
+    CLAUDE,
+    GlossStats,
+    GlossTask,
+    Identity,
+    ProviderOptions,
+)
 
 MODEL = "claude-sonnet-5"
 LEMMAS_PER_REQUEST = 25
@@ -51,32 +56,6 @@ _BATCH_INPUT_PER_MTOK = 1.00
 _BATCH_OUTPUT_PER_MTOK = 5.00
 _CACHE_WRITE_MULTIPLIER = 1.25
 _CACHE_READ_MULTIPLIER = 0.10
-
-
-@dataclass(frozen=True)
-class GlossTask:
-    """One lemma to gloss, with whatever context we have for it."""
-
-    lemma: str
-    pos: str
-    example_es: str | None = None
-    wiktionary_en: str | None = None
-    wiktionary_de: str | None = None
-    region_hint: str | None = None
-
-    @property
-    def identity(self) -> Identity:
-        return (self.lemma, self.pos)
-
-    def as_prompt_item(self) -> dict[str, str | None]:
-        return {
-            "lemma": self.lemma,
-            "pos": self.pos,
-            "example_es": self.example_es,
-            "wiktionary_en": self.wiktionary_en,
-            "wiktionary_de": self.wiktionary_de,
-            "region_hint": self.region_hint,
-        }
 
 
 @dataclass(frozen=True)
@@ -106,28 +85,19 @@ class ModelSettings:
 
 
 @dataclass
-class BatchStats:
-    """What a batch cost and how cleanly it came back."""
+class BatchStats(GlossStats):
+    """What a batch cost and how cleanly it came back.
 
-    requests: int = 0
-    succeeded: int = 0
-    errored: int = 0
+    The shared counters live on `GlossStats`. What is added here is what only a
+    remote batch has: the two batch-only terminal states, the prompt-cache token
+    columns, and a bill.
+    """
+
     expired: int = 0
     canceled: int = 0
 
-    glosses_returned: int = 0
-    truncated: int = 0
-    unmatched: int = 0
-    missing: int = 0
-    not_spanish: int = 0
-    mexicanisms: int = 0
-
-    input_tokens: int = 0
-    output_tokens: int = 0
     cache_creation_tokens: int = 0
     cache_read_tokens: int = 0
-
-    errors: list[str] = field(default_factory=list)
 
     @property
     def cache_worked(self) -> bool:
@@ -148,26 +118,24 @@ class BatchStats:
             + self.output_tokens * _BATCH_OUTPUT_PER_MTOK
         ) / 1_000_000
 
-    def merge(self, other: BatchStats) -> None:
-        for name in (
-            "requests",
-            "succeeded",
-            "errored",
-            "expired",
-            "canceled",
-            "glosses_returned",
-            "truncated",
-            "unmatched",
-            "missing",
-            "not_spanish",
-            "mexicanisms",
-            "input_tokens",
-            "output_tokens",
-            "cache_creation_tokens",
-            "cache_read_tokens",
-        ):
-            setattr(self, name, getattr(self, name) + getattr(other, name))
-        self.errors.extend(other.errors)
+    def report_lines(self) -> list[str]:
+        """The two things worth saying about a batch that a local run cannot."""
+        lines = [f"{'Estimated batch cost':<28} {'$' + format(self.estimated_cost(), '.2f'):>7}"]
+        if self.expired or self.canceled:
+            lines.append(
+                f"{'Requests never answered':<28} "
+                f"{self.expired + self.canceled:>7,}   (expired or canceled)"
+            )
+        if not self.cache_worked:
+            lines.append(
+                "!! The instruction prompt was never served from cache. It has "
+                "probably slipped"
+            )
+            lines.append(
+                "   below the 1024-token minimum, which fails silently and "
+                "multiplies the bill."
+            )
+        return lines
 
 
 def chunk_tasks(
@@ -437,4 +405,59 @@ def run(
     return parse_results(results, by_custom_id)
 
 
+@dataclass
+class ClaudeProvider:
+    """The `GlossProvider` face of everything above.
+
+    A thin wrapper by design. `run` predates the port and is what the tests
+    drive; this exists so `gloss_lexicon` can hold a provider rather than an
+    import, and so `name`/`model` reach the cache key.
+    """
+
+    settings: ModelSettings = ModelSettings()
+    client: Any = None
+    chunk_size: int = LEMMAS_PER_REQUEST
+    poll_seconds: float = 20.0
+
+    name: str = CLAUDE
+
+    @property
+    def model(self) -> str:
+        return self.settings.model
+
+    @classmethod
+    def from_options(
+        cls, options: ProviderOptions, *, client: Any = None
+    ) -> ClaudeProvider:
+        settings = ModelSettings(model=options.model) if options.model else ModelSettings()
+        return cls(
+            settings=settings,
+            client=client,
+            chunk_size=options.chunk_size or LEMMAS_PER_REQUEST,
+        )
+
+    def gloss(
+        self,
+        tasks: Sequence[GlossTask],
+        *,
+        on_status: Any = None,
+    ) -> tuple[dict[Identity, Gloss], BatchStats]:
+        return run(
+            tasks,
+            self.settings,
+            client=self.client,
+            chunk_size=self.chunk_size,
+            poll_seconds=self.poll_seconds,
+            on_status=on_status,
+        )
+
+    def describe(self) -> str:
+        return (
+            f"Claude {self.settings.model} (effort {self.settings.effort}, "
+            f"thinking {'adaptive' if self.settings.thinking else 'off'}, "
+            f"batched {self.chunk_size} per request)"
+        )
+
+
 PROMPT_VERSION = PROMPT_VERSION  # re-exported: the cache stores it per row
+GlossTask = GlossTask  # re-exported: it lived here before the port existed

@@ -11,6 +11,7 @@ from __future__ import annotations
 import gzip
 import json
 from datetime import datetime
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -25,6 +26,7 @@ from molcajete_prep.glossing.pipeline import (
     GlossingOptions,
     gloss_lexicon,
 )
+from molcajete_prep.glossing.provider import GlossStats
 from molcajete_prep.glossing.sources import DE_WIKTIONARY, EN_WIKTIONARY
 from molcajete_prep.lexicon import build_lexicon
 from molcajete_prep.nlp import Token
@@ -166,7 +168,7 @@ class TestSourcePriority:
             lexicon,
             [[[word("libro")]]],
             book_id="test",
-            options=GlossingOptions(use_claude=False, extract_dir=extracts),
+            options=GlossingOptions(use_model=False, extract_dir=extracts),
             cache=cache,
             now=NOW,
         )
@@ -178,13 +180,21 @@ class TestSourcePriority:
     def test_german_comes_from_german_wiktionary_when_it_fits_a_card(
         self, extracts, cache
     ):
+        """Only under `--de-wiktionary verbatim`, which is no longer the default.
+
+        The default demotes every German Wiktionary gloss to context, because
+        fitting a card and teaching the word are different tests and only the
+        model sees the example sentence. This asserts the old behaviour is still
+        reachable, not that it is what a build does."""
         lexicon = build_lexicon([[[word("libro")]]])
 
         result = gloss_lexicon(
             lexicon,
             [[[word("libro")]]],
             book_id="test",
-            options=GlossingOptions(use_claude=False, extract_dir=extracts),
+            options=GlossingOptions(
+                use_model=False, extract_dir=extracts, de_wiktionary=VERBATIM
+            ),
             cache=cache,
             now=NOW,
         )
@@ -295,7 +305,7 @@ class TestCaching:
             build_lexicon(tokens),
             tokens,
             book_id="test",
-            options=GlossingOptions(use_claude=False, extract_dir=extracts),
+            options=GlossingOptions(use_model=False, extract_dir=extracts),
             cache=cache,
             now=NOW,
         )
@@ -318,8 +328,8 @@ class TestCaching:
             cache=cache, now=NOW, client=client,
         )
 
-        assert first.sent_to_claude == 1
-        assert second.sent_to_claude == 0
+        assert first.sent_to_model == 1
+        assert second.sent_to_model == 0
         assert second.cache_hits == 1
 
     def test_regloss_fetches_again(self, extracts, cache):
@@ -348,7 +358,7 @@ class TestCaching:
             build_lexicon(tokens),
             tokens,
             book_id="test",
-            options=GlossingOptions(use_claude=False, extract_dir=extracts),
+            options=GlossingOptions(use_model=False, extract_dir=extracts),
             cache=cache,
             now=NOW,
         )
@@ -372,7 +382,7 @@ class TestCaching:
         )
 
         row = cache._connection.execute(
-            "SELECT * FROM glosses WHERE lemma = 'caballo'"
+            "SELECT * FROM glosses WHERE lemma = 'caballo' AND provider = 'claude'"
         ).fetchone()
         assert row["book_id"] == "las-noches"
         assert row["model"] == "claude-sonnet-5"
@@ -397,13 +407,13 @@ class TestLimits:
             build_lexicon(tokens),
             tokens,
             book_id="test",
-            options=GlossingOptions(extract_dir=extracts, claude_limit=1),
+            options=GlossingOptions(extract_dir=extracts, model_limit=1),
             cache=cache,
             now=NOW,
             client=client,
         )
 
-        assert result.sent_to_claude == 1
+        assert result.sent_to_model == 1
         assert result.skipped_by_limit == 1
         # Check the lemma lines, not the whole prompt: both words share an
         # example sentence, so a substring test would match either way.
@@ -418,13 +428,13 @@ class TestLimits:
             build_lexicon(tokens),
             tokens,
             book_id="test",
-            options=GlossingOptions(use_claude=False, extract_dir=extracts),
+            options=GlossingOptions(use_model=False, extract_dir=extracts),
             cache=cache,
             now=NOW,
         )
 
-        assert result.ran_claude is False
-        assert result.batch.requests == 0
+        assert result.ran_model is False
+        assert result.stats.requests == 0
 
     def test_a_lexicon_with_nothing_in_it_does_no_work(self, cache):
         result = gloss_lexicon(
@@ -451,7 +461,7 @@ class TestBundleIntegration:
             lexicon,
             tokens,
             book_id="test",
-            options=GlossingOptions(use_claude=False, extract_dir=extracts),
+            options=GlossingOptions(use_model=False, extract_dir=extracts),
             cache=cache,
             now=NOW,
         )
@@ -465,7 +475,7 @@ class TestBundleIntegration:
         built = build_bundle(
             fixture_epub,
             gloss=True,
-            gloss_options=GlossingOptions(use_claude=False, extract_dir=extracts),
+            gloss_options=GlossingOptions(use_model=False, extract_dir=extracts),
         )
 
         glossed = [e for e in built.bundle["lexicon"].values() if "en" in e]
@@ -497,7 +507,7 @@ class TestBundleIntegration:
         built = build_bundle(
             fixture_epub,
             gloss=True,
-            gloss_options=GlossingOptions(use_claude=False, extract_dir=extracts),
+            gloss_options=GlossingOptions(use_model=False, extract_dir=extracts),
         )
 
         for entry in built.bundle["lexicon"].values():
@@ -566,7 +576,7 @@ class TestWarmRebuilds:
             build_lexicon(tokens),
             tokens,
             book_id="test",
-            options=GlossingOptions(use_claude=False, extract_dir=extracts),
+            options=GlossingOptions(use_model=False, extract_dir=extracts),
             cache=cache,
             now=NOW,
         )
@@ -577,7 +587,7 @@ class TestWarmRebuilds:
 
     def test_a_second_offline_build_reads_everything_from_cache(self, extracts, cache):
         tokens = [[[word("libro"), word("inexistente")]]]
-        options = GlossingOptions(use_claude=False, extract_dir=extracts)
+        options = GlossingOptions(use_model=False, extract_dir=extracts)
 
         gloss_lexicon(
             build_lexicon(tokens), tokens, book_id="a", options=options,
@@ -596,7 +606,7 @@ class TestWarmRebuilds:
         tokens = [[[word("inexistente")]]]
         gloss_lexicon(
             build_lexicon(tokens), tokens, book_id="a",
-            options=GlossingOptions(use_claude=False, extract_dir=extracts),
+            options=GlossingOptions(use_model=False, extract_dir=extracts),
             cache=cache, now=NOW,
         )
 
@@ -607,7 +617,7 @@ class TestWarmRebuilds:
             cache=cache, now=NOW, client=client,
         )
 
-        assert online.sent_to_claude == 1
+        assert online.sent_to_model == 1
         assert next(iter(online.glosses.values())).de == "x"
 
     def test_a_lemma_claude_already_answered_is_not_sent_again(self, extracts, cache):
@@ -624,7 +634,7 @@ class TestWarmRebuilds:
             cache=cache, now=NOW, client=client,
         )
 
-        assert second.sent_to_claude == 0
+        assert second.sent_to_model == 0
 
     def test_a_lemma_claude_refused_is_not_paid_for_twice(self, extracts, cache):
         """Re-sending would buy the same "not a word" on every rebuild."""
@@ -643,7 +653,7 @@ class TestWarmRebuilds:
             cache=cache, now=NOW, client=client,
         )
 
-        assert second.sent_to_claude == 0
+        assert second.sent_to_model == 0
 
     def test_a_gloss_missing_only_german_is_still_sent(self, extracts, cache):
         """English Wiktionary covers far more than German does, so this is the
@@ -657,4 +667,190 @@ class TestWarmRebuilds:
             cache=cache, now=NOW, client=client,
         )
 
-        assert result.sent_to_claude == 1
+        assert result.sent_to_model == 1
+
+
+class _FakeProvider:
+    """A provider that answers from a dict, for testing the seam rather than a model."""
+
+    def __init__(self, name, model, answers):
+        self.name = name
+        self.model = model
+        self.answers = answers
+        self.asked: list[tuple[str, str]] = []
+
+    def describe(self) -> str:
+        return f"{self.name} {self.model}"
+
+    def gloss(self, tasks, *, on_status=None):
+        self.asked.extend(task.identity for task in tasks)
+        glosses = {}
+        for task in tasks:
+            found = self.answers.get(task.identity)
+            if found is not None:
+                glosses[task.identity] = found
+        return glosses, GlossStats(requests=1, succeeded=1, glosses_returned=len(glosses))
+
+
+def local_provider(answers, model="gemma3:12b"):
+    return _FakeProvider("ollama", model, answers)
+
+
+class TestProviderSelection:
+    """CLAUDE.md rule 4, applied to the one other thing this pipeline does not
+    control: the provider is chosen by name, and nothing here imports one."""
+
+    def test_the_provider_is_recorded_on_the_result(self, extracts, cache):
+        tokens = [[[word("madriguera")]]]
+        provider = local_provider(
+            {("madriguera", "NOUN"): Gloss(
+                lemma="madriguera", pos="NOUN", de="der Bau",
+                de_source=GlossSource.OLLAMA,
+            )}
+        )
+
+        result = gloss_lexicon(
+            build_lexicon(tokens), tokens, book_id="a",
+            options=GlossingOptions(extract_dir=extracts, provider=provider),
+            cache=cache, now=NOW,
+        )
+
+        assert (result.provider_name, result.provider_model) == ("ollama", "gemma3:12b")
+        assert result.glosses[next(iter(result.glosses))].de == "der Bau"
+
+    def test_an_offline_build_records_no_provider(self, extracts, cache):
+        tokens = [[[word("libro")]]]
+
+        result = gloss_lexicon(
+            build_lexicon(tokens), tokens, book_id="a",
+            options=GlossingOptions(use_model=False, extract_dir=extracts),
+            cache=cache, now=NOW,
+        )
+
+        assert result.ran_model is False
+        assert result.provider_name == ""
+
+    def test_a_local_gloss_is_filed_under_the_local_model(self, extracts, cache):
+        tokens = [[[word("madriguera")]]]
+        provider = local_provider(
+            {("madriguera", "NOUN"): Gloss(
+                lemma="madriguera", pos="NOUN", de="der Bau",
+                de_source=GlossSource.OLLAMA,
+            )}
+        )
+
+        gloss_lexicon(
+            build_lexicon(tokens), tokens, book_id="a",
+            options=GlossingOptions(extract_dir=extracts, provider=provider),
+            cache=cache, now=NOW,
+        )
+
+        row = cache._connection.execute(
+            "SELECT * FROM glosses WHERE lemma = 'madriguera' AND provider = 'ollama'"
+        ).fetchone()
+        assert row["model"] == "gemma3:12b"
+
+    def test_only_the_models_own_words_go_in_the_model_scope(self, extracts, cache):
+        """English Wiktionary's answer must not be filed under the model's name,
+        or a later build could not tell which half the model is accountable for."""
+        tokens = [[[word("madriguera")]]]
+        provider = local_provider(
+            {("madriguera", "NOUN"): Gloss(
+                lemma="madriguera", pos="NOUN", de="der Bau",
+                de_source=GlossSource.OLLAMA,
+            )}
+        )
+
+        gloss_lexicon(
+            build_lexicon(tokens), tokens, book_id="a",
+            options=GlossingOptions(extract_dir=extracts, provider=provider),
+            cache=cache, now=NOW,
+        )
+
+        row = cache._connection.execute(
+            "SELECT * FROM glosses WHERE lemma = 'madriguera' AND provider = 'ollama'"
+        ).fetchone()
+        assert row["de"] == "der Bau"
+        assert row["en"] is None
+
+    def test_switching_providers_does_not_re_read_the_dumps(self, extracts, cache):
+        """The warm-rebuild property, across providers.
+
+        Scoping the Wiktionary rows per provider would have meant that passing
+        `--gloss-provider ollama` re-streamed 3.1 GB of dumps to rediscover
+        answers already in the cache — the previous commit's fix, silently
+        undone by this one."""
+        tokens = [[[word("libro")]]]
+        lexicon = build_lexicon(tokens)
+
+        gloss_lexicon(
+            lexicon, tokens, book_id="a",
+            options=GlossingOptions(
+                extract_dir=extracts, provider=local_provider({}, model="gemma3:12b")
+            ),
+            cache=cache, now=NOW,
+        )
+
+        # A directory that cannot exist: reading a dump now would raise.
+        second = gloss_lexicon(
+            lexicon, tokens, book_id="b",
+            options=GlossingOptions(
+                extract_dir=Path("/nonexistent/extracts"),
+                provider=local_provider({}, model="qwen3:8b"),
+            ),
+            cache=cache, now=NOW,
+        )
+
+        assert second.cache_hits == 1
+
+    def test_one_provider_does_not_answer_for_another(self, extracts, cache):
+        """A gloss written by a 12B model on a laptop and one written by Sonnet
+        are different claims. The cache must not let either stand in for the
+        other."""
+        tokens = [[[word("madriguera")]]]
+        lexicon = build_lexicon(tokens)
+        first = local_provider(
+            {("madriguera", "NOUN"): Gloss(
+                lemma="madriguera", pos="NOUN", de="der Bau",
+                de_source=GlossSource.OLLAMA,
+            )},
+            model="gemma3:12b",
+        )
+        second = local_provider({}, model="qwen3:8b")
+
+        gloss_lexicon(
+            lexicon, tokens, book_id="a",
+            options=GlossingOptions(extract_dir=extracts, provider=first),
+            cache=cache, now=NOW,
+        )
+        gloss_lexicon(
+            lexicon, tokens, book_id="b",
+            options=GlossingOptions(extract_dir=extracts, provider=second),
+            cache=cache, now=NOW,
+        )
+
+        assert second.asked == [("madriguera", "NOUN")]
+
+    def test_a_lemma_the_local_model_answered_is_not_asked_again(self, extracts, cache):
+        """`_wants_model` has to test model sources in general. Testing Claude
+        specifically would mean every local rebuild re-glossed the whole book."""
+        tokens = [[[word("madriguera")]]]
+        lexicon = build_lexicon(tokens)
+        answers = {("madriguera", "NOUN"): Gloss(
+            lemma="madriguera", pos="NOUN", de="der Bau", en="burrow",
+            de_source=GlossSource.OLLAMA, en_source=GlossSource.OLLAMA,
+        )}
+
+        gloss_lexicon(
+            lexicon, tokens, book_id="a",
+            options=GlossingOptions(extract_dir=extracts, provider=local_provider(answers)),
+            cache=cache, now=NOW,
+        )
+        again = local_provider(answers)
+        gloss_lexicon(
+            lexicon, tokens, book_id="b",
+            options=GlossingOptions(extract_dir=extracts, provider=again),
+            cache=cache, now=NOW,
+        )
+
+        assert again.asked == []

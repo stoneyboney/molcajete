@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sqlite3
 from datetime import datetime
 
 import pytest
@@ -129,13 +130,210 @@ class TestBulkAccess:
         assert cache.get("chido", "ADJ") is not None
 
 
+class TestProviderScoping:
+    """A gloss from Sonnet and one from a 12B model on this laptop are two
+    different claims that happen to be about the same word."""
+
+    def test_two_providers_can_hold_different_glosses_for_one_lemma(self, cache):
+        cache.put(
+            Gloss(lemma="padre", pos="ADJ", de="toll", de_source=GlossSource.CLAUDE),
+            now=NOW, provider="claude", model="claude-sonnet-5",
+        )
+        cache.put(
+            Gloss(lemma="padre", pos="ADJ", de="väterlich", de_source=GlossSource.OLLAMA),
+            now=NOW, provider="ollama", model="gemma3:12b",
+        )
+
+        remote = cache.get("padre", "ADJ", provider="claude", model="claude-sonnet-5")
+        local = cache.get("padre", "ADJ", provider="ollama", model="gemma3:12b")
+
+        assert remote.de == "toll"
+        assert local.de == "väterlich"
+
+    def test_two_models_of_one_provider_do_not_collide_either(self, cache):
+        cache.put(
+            Gloss(lemma="casa", pos="NOUN", de="das Haus"),
+            now=NOW, provider="ollama", model="gemma3:12b",
+        )
+        cache.put(
+            Gloss(lemma="casa", pos="NOUN", de="Haus"),
+            now=NOW, provider="ollama", model="qwen3:8b",
+        )
+
+        assert cache.get("casa", "NOUN", provider="ollama", model="gemma3:12b").de == "das Haus"
+        assert cache.get("casa", "NOUN", provider="ollama", model="qwen3:8b").de == "Haus"
+
+    def test_a_provider_does_not_see_another_provider_s_answer(self, cache):
+        cache.put(
+            Gloss(lemma="chido", pos="ADJ", de="cool", de_source=GlossSource.CLAUDE),
+            now=NOW, provider="claude", model="claude-sonnet-5",
+        )
+
+        assert cache.get("chido", "ADJ", provider="ollama", model="gemma3:12b") is None
+
+    def test_the_wiktionary_rows_are_shared_by_every_provider(self):
+        """Not tidiness — this is what keeps a rebuild warm. Scoping the
+        dictionary rows per provider would mean switching providers re-streamed
+        3.1 GB of dumps to rediscover the same answers."""
+        with GlossCache.in_memory() as cache:
+            cache.put(Gloss(lemma="libro", pos="NOUN", en="book"), now=NOW)
+
+            for provider, model in (("claude", "claude-sonnet-5"), ("ollama", "gemma3:12b")):
+                found = cache.get("libro", "NOUN", provider=provider, model=model)
+                assert found is not None and found.en == "book"
+
+    def test_a_model_row_layers_over_the_dictionary_row(self):
+        """The same priority order a live pass applies: Wiktionary fills what it
+        can, the model fills the rest. A cached build and a fresh one have to
+        agree, or the cache changes the answer."""
+        with GlossCache.in_memory() as cache:
+            cache.put(
+                Gloss(lemma="fusil", pos="NOUN", en="rifle", en_source=GlossSource.EN_WIKTIONARY),
+                now=NOW,
+            )
+            cache.put(
+                Gloss(lemma="fusil", pos="NOUN", de="das Gewehr", de_source=GlossSource.OLLAMA),
+                now=NOW, provider="ollama", model="gemma3:12b",
+            )
+
+            merged = cache.get("fusil", "NOUN", provider="ollama", model="gemma3:12b")
+
+            assert merged.en == "rifle"
+            assert merged.de == "das Gewehr"
+            assert merged.en_source is GlossSource.EN_WIKTIONARY
+            assert merged.de_source is GlossSource.OLLAMA
+
+    def test_an_unscoped_lookup_reads_only_the_dictionary_rows(self):
+        """Which is what an offline build wants: no model was consulted, so no
+        model's answer should appear."""
+        with GlossCache.in_memory() as cache:
+            cache.put(
+                Gloss(lemma="casa", pos="NOUN", de="das Haus"),
+                now=NOW, provider="ollama", model="gemma3:12b",
+            )
+
+            assert cache.get("casa", "NOUN") is None
+
+    def test_forget_clears_every_scope_by_default(self):
+        """`--regloss` is what you run after kaikki refreshes, so leaving the
+        dictionary rows behind would answer half the question from stale data."""
+        with GlossCache.in_memory() as cache:
+            cache.put(Gloss(lemma="casa", pos="NOUN", en="house"), now=NOW)
+            cache.put(
+                Gloss(lemma="casa", pos="NOUN", de="das Haus"),
+                now=NOW, provider="ollama", model="gemma3:12b",
+            )
+
+            cache.forget([("casa", "NOUN")])
+
+            assert cache.count() == 0
+
+    def test_forget_can_drop_one_provider_and_leave_the_rest(self):
+        with GlossCache.in_memory() as cache:
+            cache.put(Gloss(lemma="casa", pos="NOUN", en="house"), now=NOW)
+            cache.put(
+                Gloss(lemma="casa", pos="NOUN", de="das Haus"),
+                now=NOW, provider="ollama", model="gemma3:12b",
+            )
+
+            cache.forget([("casa", "NOUN")], provider="ollama", model="gemma3:12b")
+
+            assert cache.get("casa", "NOUN").en == "house"
+            assert cache.count() == 1
+
+    def test_bulk_lookup_scopes_the_same_way_as_a_single_one(self, cache):
+        cache.put_many(
+            [Gloss(lemma=f"palabra{i:03d}", pos="NOUN", de="x") for i in range(300)],
+            now=NOW, provider="ollama", model="gemma3:12b",
+        )
+
+        identities = [(f"palabra{i:03d}", "NOUN") for i in range(300)]
+
+        assert len(cache.get_many(identities, provider="ollama", model="gemma3:12b")) == 300
+        assert cache.get_many(identities) == {}
+
+
+class TestMigration:
+    """An existing cache is carried forward rather than made worthless.
+
+    Deleting it and rebuilding means re-streaming 3.1 GB of Wiktionary dumps to
+    rediscover glosses that are already correct.
+    """
+
+    OLD_SCHEMA = """
+    CREATE TABLE glosses (
+        lemma TEXT NOT NULL, pos TEXT NOT NULL, de TEXT, en TEXT,
+        de_source TEXT, en_source TEXT, mexicanism INTEGER NOT NULL DEFAULT 0,
+        region_note TEXT, not_spanish INTEGER NOT NULL DEFAULT 0,
+        corrected_lemma TEXT, model TEXT, prompt_version INTEGER,
+        example_es TEXT, book_id TEXT, created_at TEXT NOT NULL,
+        PRIMARY KEY (lemma, pos)
+    );
+    """
+
+    def _old_cache(self, path, rows):
+        connection = sqlite3.connect(path)
+        connection.executescript(self.OLD_SCHEMA)
+        connection.executemany(
+            "INSERT INTO glosses (lemma, pos, de, en, model, created_at)"
+            " VALUES (?,?,?,?,?,'2026-08-17T00:00:00')",
+            rows,
+        )
+        connection.commit()
+        connection.close()
+
+    def test_dictionary_rows_survive_and_stay_unscoped(self, tmp_path):
+        path = tmp_path / "old.sqlite3"
+        self._old_cache(path, [("libro", "NOUN", None, "book", None)])
+
+        with GlossCache(path) as cache:
+            assert cache.get("libro", "NOUN").en == "book"
+
+    def test_a_row_that_names_a_model_becomes_a_claude_row(self, tmp_path):
+        """Before the port there was one model provider, so that is what a row
+        naming a model must have come from."""
+        path = tmp_path / "old.sqlite3"
+        self._old_cache(path, [("casa", "NOUN", "das Haus", "house", "claude-sonnet-5")])
+
+        with GlossCache(path) as cache:
+            assert cache.get("casa", "NOUN") is None
+            found = cache.get("casa", "NOUN", provider="claude", model="claude-sonnet-5")
+            assert found.de == "das Haus"
+
+    def test_the_empty_miss_rows_survive_too(self, tmp_path):
+        """They are the whole reason a rebuild is warm, and there are thousands."""
+        path = tmp_path / "old.sqlite3"
+        self._old_cache(
+            path, [(f"palabra{i:03d}", "NOUN", None, None, None) for i in range(500)]
+        )
+
+        with GlossCache(path) as cache:
+            assert cache.count() == 500
+
+    def test_migrating_twice_is_a_no_op(self, tmp_path):
+        path = tmp_path / "old.sqlite3"
+        self._old_cache(path, [("libro", "NOUN", None, "book", None)])
+
+        with GlossCache(path):
+            pass
+        with GlossCache(path) as cache:
+            assert cache.count() == 1
+            assert cache.get("libro", "NOUN").en == "book"
+
+    def test_a_new_cache_needs_no_migration(self, tmp_path):
+        with GlossCache(tmp_path / "fresh.sqlite3") as cache:
+            cache.put(Gloss(lemma="casa", pos="NOUN", de="das Haus"), now=NOW)
+            assert cache.count() == 1
+
+
 class TestProvenance:
     def test_the_disambiguating_sentence_and_book_are_recorded(self, cache):
-        """A Claude gloss is only correct for the sense the book used, so the
+        """A model's gloss is only correct for the sense the book used, so the
         row has to say which book and which sentence produced it."""
         cache.put(
             madriguera(),
             now=NOW,
+            provider="claude",
             model="claude-sonnet-5",
             prompt_version=1,
             example_es="Mi papá dice que somos gente de la madriguera.",

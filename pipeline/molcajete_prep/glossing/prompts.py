@@ -13,6 +13,8 @@ far better than prose rules do, and they carry the block over the threshold.
 
 from __future__ import annotations
 
+from molcajete_prep.glossing.models import MAX_UNITS, MAX_WORDS_PER_UNIT
+
 PROMPT_VERSION = 1
 
 # Answering with a fixed schema rather than free text is what lets 25 lemmas
@@ -210,3 +212,47 @@ def render_batch(items: list[dict]) -> str:
         lines.append(" · ".join(parts))
 
     return "Gloss these lemmas:\n\n" + "\n".join(lines)
+
+
+# The word limit, restated for a model that has just broken it. The system
+# prompt says it once in prose among a page of other rules; a model that ignored
+# it there needs it alone, next to its own bad answer, with nothing else to
+# attend to.
+_RULES_AGAIN = f"""\
+Rules, again, and nothing else matters here:
+- A gloss is at most {MAX_UNITS} alternatives separated by commas.
+- Each alternative is at most {MAX_WORDS_PER_UNIT} words.
+- Translate the word. Do not define it. No relative clauses, no "a kind of".
+- Echo the lemma and the tag exactly as they were given.
+- Answer for every lemma listed, and for no others.\
+"""
+
+
+def render_correction(
+    items: list[dict],
+    *,
+    offending: str,
+    reason: str,
+) -> str:
+    """The retry turn: the same question, with the failure named.
+
+    Written for a local model, which follows a long system prompt less reliably
+    than Claude does. Three things in order — what was wrong, the rule it broke,
+    and the original question again — because a correction that omits the
+    question invites the model to answer the complaint instead.
+
+    The offending text is quoted back deliberately. Naming the rule alone
+    produces the same answer again; showing the model its own output is what
+    makes the second attempt different from the first.
+    """
+    quoted = offending.strip()
+    if len(quoted) > 400:
+        quoted = quoted[:400] + " …"
+
+    return (
+        "Your previous answer was rejected.\n\n"
+        f"Problem: {reason}.\n"
+        f"You wrote: {quoted}\n\n"
+        f"{_RULES_AGAIN}\n\n"
+        f"{render_batch(items)}"
+    )

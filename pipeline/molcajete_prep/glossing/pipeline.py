@@ -1,12 +1,17 @@
-"""Running the three sources in order, and folding the answers together.
+"""Running the sources in order, and folding the answers together.
 
-    cache  ->  en.wiktionary  ->  de.wiktionary  ->  Claude  ->  cache
+    cache  ->  en.wiktionary  ->  de.wiktionary  ->  a model  ->  cache
 
 Each stage fills only what the stage before it left empty, so a source's
 priority is simply its position. English glosses come from English Wiktionary
-because that is where they exist; German mostly comes from Claude, because
+because that is where they exist; German mostly comes from the model, because
 German Wiktionary holds about 6,600 Spanish entries against a book's nine
 thousand lemmas.
+
+Which model is not this module's business. It is handed a `GlossProvider`
+(`glossing/provider.py`) chosen by `--gloss-provider`, and nothing here imports
+Claude or Ollama — the same rule CLAUDE.md applies to storage, applied to the
+one other place this pipeline talks to something it does not control.
 
 The whole lexicon is glossed, not just the teach set. Two reasons: `mexicanism`
 is an *input* to the SPEC §5 teach rules, so scoping the pass to the teach set
@@ -24,11 +29,17 @@ from pathlib import Path
 from typing import Any
 
 from molcajete_prep.classify import LemmaKey
-from molcajete_prep.glossing.cache import GlossCache
-from molcajete_prep.glossing.claude import BatchStats, GlossTask, ModelSettings
-from molcajete_prep.glossing.claude import run as run_claude
-from molcajete_prep.glossing.models import Gloss, GlossSource
+from molcajete_prep.glossing.cache import NO_PROVIDER, GlossCache
+from molcajete_prep.glossing.models import Gloss, GlossSource, is_model_source
 from molcajete_prep.glossing.prompts import PROMPT_VERSION
+from molcajete_prep.glossing.provider import (
+    GlossProvider,
+    GlossStats,
+    GlossTask,
+    Identity,
+    ProviderOptions,
+    build_provider,
+)
 from molcajete_prep.glossing.sources import (
     DE_WIKTIONARY,
     DEFAULT_EXTRACT_DIR,
@@ -38,8 +49,6 @@ from molcajete_prep.glossing.sources import (
 from molcajete_prep.glossing.wiktionary import WiktionaryHit, read_extract
 from molcajete_prep.lexicon import Lexicon, example_sentence
 from molcajete_prep.nlp import Token
-
-Identity = tuple[str, str]
 
 # How German Wiktionary's text is treated.
 VERBATIM = "verbatim"
@@ -53,17 +62,26 @@ class GlossingOptions:
     `de_wiktionary` exists because sizing alone cannot catch a *short*
     definition: German Wiktionary glosses `lunes` as "der erste Wochentag",
     which fits a card and reads like a riddle. `verbatim` keeps such glosses;
-    `context-only` demotes every German Wiktionary gloss to Claude context and
-    lets the model write all the German. The trial measures which is right; this
-    flag makes acting on the answer a one-word change.
+    `context-only` demotes every German Wiktionary gloss to model context and
+    lets the model write all the German.
+
+    `context-only` is the default because that is what the riddle argument
+    concludes: a gloss that fits a card is not the same as a gloss that teaches
+    the word, and only the model has the example sentence in front of it.
+    `--de-wiktionary verbatim` keeps the old behaviour for comparison.
     """
 
-    use_claude: bool = True
+    use_model: bool = True
     use_cache: bool = True
     regloss: bool = False
-    claude_limit: int | None = None
-    de_wiktionary: str = VERBATIM
-    settings: ModelSettings = field(default_factory=ModelSettings)
+    model_limit: int | None = None
+    de_wiktionary: str = CONTEXT_ONLY
+
+    # How the model half of the pass is run. `provider` wins when given — that
+    # is the seam tests and the trial use; otherwise one is built from the
+    # options, which is what the CLI flags reach.
+    provider_options: ProviderOptions = field(default_factory=ProviderOptions)
+    provider: GlossProvider | None = None
 
     # None means "wherever the extracts normally live". Resolved at call time
     # rather than baked in as a default, so the test suite can redirect it and
@@ -77,11 +95,20 @@ class GlossingResult:
 
     glosses: dict[LemmaKey, Gloss] = field(default_factory=dict)
     cache_hits: int = 0
-    sent_to_claude: int = 0
+    sent_to_model: int = 0
     skipped_by_limit: int = 0
-    batch: BatchStats = field(default_factory=BatchStats)
-    ran_claude: bool = False
-    de_wiktionary_mode: str = VERBATIM
+    stats: GlossStats = field(default_factory=GlossStats)
+    ran_model: bool = False
+    provider_name: str = ""
+    provider_model: str = ""
+    de_wiktionary_mode: str = CONTEXT_ONLY
+
+    # The raw Wiktionary text behind each identity, which is what the model is
+    # shown as context. Kept so the trial can build exactly the prompts a real
+    # build would send: under `context-only` the applied gloss has had its
+    # German removed, and reconstructing context from it would quietly send the
+    # model less than production does.
+    context: dict[Identity, GlossTask] = field(default_factory=dict)
 
     def gloss_for(self, key: LemmaKey) -> Gloss | None:
         return self.glosses.get(key)
@@ -91,12 +118,16 @@ class GlossingResult:
         return {key: gloss.mexicanism for key, gloss in self.glosses.items()}
 
 
-def _wants_claude(gloss: Gloss | None) -> bool:
+def _wants_model(gloss: Gloss | None) -> bool:
     """Whether this lemma still has something to gain from the model.
 
-    Complete in both languages, or already answered by Claude — including a
-    refusal — means there is nothing more to ask. Re-sending a lemma Claude has
-    already declined would pay for the same "not a word" on every rebuild.
+    Complete in both languages, or already answered by a model — including a
+    refusal — means there is nothing more to ask. Re-sending a lemma the model
+    has already declined would pay for the same "not a word" on every rebuild.
+
+    Tested against model sources in general rather than against Claude
+    specifically: a lemma Ollama answered must not be re-asked either, or every
+    local rebuild would run the whole book again.
     """
     if gloss is None:
         return True
@@ -104,9 +135,7 @@ def _wants_claude(gloss: Gloss | None) -> bool:
         return False
     if gloss.has_german and gloss.has_english:
         return False
-    return not (
-        gloss.de_source is GlossSource.CLAUDE or gloss.en_source is GlossSource.CLAUDE
-    )
+    return not (is_model_source(gloss.de_source) or is_model_source(gloss.en_source))
 
 
 def _require(path: Path, what: str) -> None:
@@ -169,7 +198,19 @@ def gloss_lexicon(
 ) -> GlossingResult:
     """Gloss every lemma in `lexicon`, cheapest source first."""
     now = now or datetime.now()
-    result = GlossingResult(de_wiktionary_mode=options.de_wiktionary)
+
+    # Resolved before anything else so that the cache lookup is already scoped
+    # to the provider that would answer the misses. Building it costs nothing
+    # and touches no network.
+    provider = None
+    if options.use_model:
+        provider = options.provider or build_provider(options.provider_options, client=client)
+
+    result = GlossingResult(
+        de_wiktionary_mode=options.de_wiktionary,
+        provider_name=provider.name if provider else "",
+        provider_model=provider.model if provider else "",
+    )
     if not lexicon.records:
         return result
 
@@ -177,6 +218,11 @@ def gloss_lexicon(
     for key, record in lexicon.records.items():
         keys_by_identity.setdefault((record.lemma, record.pos), []).append(key)
     identities = list(keys_by_identity)
+
+    scope = {
+        "provider": provider.name if provider else NO_PROVIDER,
+        "model": provider.model if provider else "",
+    }
 
     owned_cache = cache is None
     cache = cache or GlossCache()
@@ -186,7 +232,7 @@ def gloss_lexicon(
 
         by_identity: dict[Identity, Gloss] = {}
         if options.use_cache:
-            for identity, gloss in cache.get_many(identities).items():
+            for identity, gloss in cache.get_many(identities, **scope).items():
                 by_identity[identity] = gloss
             result.cache_hits = len(by_identity)
 
@@ -218,16 +264,16 @@ def gloss_lexicon(
                         take_german=take_german or source is not GlossSource.DE_WIKTIONARY,
                     )
 
-        # A lemma goes to Claude when either language is still empty. English is
-        # secondary, but the same request answers both, so a lemma already in a
-        # chunk costs nothing extra to complete.
+        # A lemma goes to the model when either language is still empty. English
+        # is secondary, but the same request answers both, so a lemma already in
+        # a chunk costs nothing extra to complete.
         #
         # Computed over every identity, not just the ones the cache missed. A
         # gloss cached by an earlier `--gloss-offline` build has no German and
         # must still be sent; scoping this to cache misses would mean an offline
         # build permanently poisoned the book against ever being glossed.
         needs = [
-            identity for identity in identities if _wants_claude(by_identity.get(identity))
+            identity for identity in identities if _wants_model(by_identity.get(identity))
         ]
 
         # Most-used words first, so a --gloss-limit spends where it pays.
@@ -236,33 +282,45 @@ def gloss_lexicon(
 
         needs.sort(key=lambda identity: (-book_count(identity), identity))
 
-        if options.claude_limit is not None and len(needs) > options.claude_limit:
-            result.skipped_by_limit = len(needs) - options.claude_limit
-            needs = needs[: options.claude_limit]
+        if options.model_limit is not None and len(needs) > options.model_limit:
+            result.skipped_by_limit = len(needs) - options.model_limit
+            needs = needs[: options.model_limit]
 
-        if options.use_claude and needs:
-            examples: dict[Identity, str | None] = {}
-            for identity in needs:
-                record = lexicon.records[keys_by_identity[identity][0]]
-                found = example_sentence(record, chapters)
-                examples[identity] = found[0] if found else None
+        # Built for every identity, not only the ones being sent: the trial
+        # reads this to reproduce production's prompts exactly.
+        examples: dict[Identity, str | None] = {}
+        for identity in identities:
+            record = lexicon.records[keys_by_identity[identity][0]]
+            found = example_sentence(record, chapters)
+            examples[identity] = found[0] if found else None
+            result.context[identity] = _task_for(identity, raw_hits, examples[identity])
 
-            tasks = [_task_for(identity, raw_hits, examples[identity]) for identity in needs]
-            result.sent_to_claude = len(tasks)
-            result.ran_claude = True
+        # What the dictionaries alone concluded, before any model touched it.
+        # Snapshotted rather than recovered afterwards, because the model's
+        # answer is merged into `by_identity` in place and the dictionary scope
+        # must not end up holding it.
+        from_dictionaries = dict(by_identity)
 
-            written, stats = run_claude(
-                tasks, options.settings, client=client, on_status=on_status
-            )
-            result.batch = stats
+        if provider is not None and needs:
+            tasks = [result.context[identity] for identity in needs]
+            result.sent_to_model = len(tasks)
+            result.ran_model = True
+
+            written, stats = provider.gloss(tasks, on_status=on_status)
+            result.stats = stats
             for identity, gloss in written.items():
                 current = by_identity.get(identity)
                 by_identity[identity] = current.merged_with(gloss) if current else gloss
 
+            # Only what the model itself said goes in the model scope. Writing
+            # the merged gloss there would file English Wiktionary's answer
+            # under the model's name, and a later build reading that row could
+            # not tell which half the model is accountable for.
             cache.put_many(
-                [by_identity[identity] for identity in written],
+                [written[identity] for identity in written],
                 now=now,
-                model=options.settings.model,
+                provider=provider.name,
+                model=provider.model,
                 prompt_version=PROMPT_VERSION,
                 examples={identity: examples.get(identity) for identity in written},
                 book_id=book_id,
@@ -274,12 +332,17 @@ def gloss_lexicon(
         # a warm build cost the same 68 seconds as a cold one. An empty row is
         # the answer "we looked"; `--regloss` is how you ask again after kaikki
         # refreshes.
-        answered_by_claude = set(needs) if options.use_claude else set()
+        #
+        # Written for every outstanding lemma, the model-answered ones included.
+        # Before the provider scopes existed, a model-answered lemma was skipped
+        # here because its single row already held the merged answer. Now the
+        # two live in different scopes, and skipping them would mean each
+        # model-answered lemma re-streamed both dumps on the next build — the
+        # warm-rebuild fix undone for exactly the lemmas that cost the most.
         cache.put_many(
             [
-                by_identity.get(identity) or Gloss(lemma=identity[0], pos=identity[1])
+                from_dictionaries.get(identity) or Gloss(lemma=identity[0], pos=identity[1])
                 for identity in outstanding
-                if identity not in answered_by_claude
             ],
             now=now,
             book_id=book_id,

@@ -12,6 +12,7 @@ from molcajete_prep.bundle import build_bundle, write_bundle
 from molcajete_prep.claude_status import print_batch_status
 from molcajete_prep.classify import ClassificationOptions
 from molcajete_prep.glossing.pipeline import CONTEXT_ONLY, VERBATIM, GlossingOptions
+from molcajete_prep.glossing.provider import CLAUDE, PROVIDER_NAMES, ProviderOptions
 from molcajete_prep.report import render_report
 
 BUNDLE_SUFFIX = ".molcajete.json"
@@ -98,12 +99,23 @@ def build_parser() -> argparse.ArgumentParser:
     glossing.add_argument(
         "--gloss-offline",
         action="store_true",
-        help="use Wiktionary and the cache only, never the Claude API",
+        help="use Wiktionary and the cache only, never a model",
+    )
+    glossing.add_argument(
+        "--gloss-provider",
+        choices=PROVIDER_NAMES,
+        default=CLAUDE,
+        help="which model writes the glosses Wiktionary could not: the Claude "
+        f"Batches API, or a model running locally under Ollama (default: {CLAUDE})",
+    )
+    glossing.add_argument(
+        "--gloss-model",
+        help="override the provider's model, e.g. claude-haiku-4-5 or qwen3:8b",
     )
     glossing.add_argument(
         "--gloss-limit",
         type=int,
-        help="send at most this many lemmas to Claude, most-used first",
+        help="send at most this many lemmas to the model, most-used first",
     )
     glossing.add_argument(
         "--regloss",
@@ -114,9 +126,38 @@ def build_parser() -> argparse.ArgumentParser:
     glossing.add_argument(
         "--de-wiktionary",
         choices=(VERBATIM, CONTEXT_ONLY),
-        default=VERBATIM,
+        default=CONTEXT_ONLY,
         help="whether a short German Wiktionary gloss is used as it stands, or "
-        "demoted to context so Claude writes every German gloss (default: verbatim)",
+        "demoted to context so the model writes every German gloss "
+        f"(default: {CONTEXT_ONLY} — German Wiktionary glosses `lunes` as "
+        '"der erste Wochentag", which fits a card and reads like a riddle)',
+    )
+
+    local = parser.add_argument_group(
+        "local model",
+        "Only meaningful with --gloss-provider ollama. A local model saturates "
+        "the machine and follows instructions less reliably than a hosted one, "
+        "so both defaults are conservative.",
+    )
+    local.add_argument(
+        "--gloss-concurrency",
+        type=int,
+        default=ProviderOptions.concurrency,
+        help="how many requests to have in flight at once (default: "
+        f"{ProviderOptions.concurrency})",
+    )
+    local.add_argument(
+        "--gloss-retries",
+        type=int,
+        default=ProviderOptions.retries,
+        help="how many times to re-ask with a stricter prompt after a malformed "
+        f"or over-long answer (default: {ProviderOptions.retries})",
+    )
+    local.add_argument(
+        "--gloss-chunk",
+        type=int,
+        help="lemmas per request. Defaults to 25 for Claude, where a cached "
+        "prompt prefix is worth amortizing, and 1 locally, where it is not.",
     )
     return parser
 
@@ -131,10 +172,17 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     gloss_options = GlossingOptions(
-        use_claude=not args.gloss_offline,
+        use_model=not args.gloss_offline,
         regloss=args.regloss,
-        claude_limit=args.gloss_limit,
+        model_limit=args.gloss_limit,
         de_wiktionary=args.de_wiktionary,
+        provider_options=ProviderOptions(
+            name=args.gloss_provider,
+            model=args.gloss_model,
+            chunk_size=args.gloss_chunk,
+            concurrency=args.gloss_concurrency,
+            retries=args.gloss_retries,
+        ),
     )
 
     result = build_bundle(

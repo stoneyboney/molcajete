@@ -31,6 +31,18 @@ class GlossSource(str, Enum):
     DE_WIKTIONARY = "de-wiktionary"
     EN_WIKTIONARY = "en-wiktionary"
     CLAUDE = "claude"
+    OLLAMA = "ollama"
+
+
+# The sources that are a language model rather than a dictionary. The
+# distinction is load-bearing in two places: the pass must not re-ask a model
+# for a lemma it has already answered, and the report separates what a
+# dictionary knew from what a model asserted.
+MODEL_SOURCES = frozenset({GlossSource.CLAUDE, GlossSource.OLLAMA})
+
+
+def is_model_source(source: GlossSource | None) -> bool:
+    return source in MODEL_SOURCES
 
 
 @dataclass(frozen=True)

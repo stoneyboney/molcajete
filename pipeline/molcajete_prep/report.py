@@ -15,7 +15,8 @@ from datetime import datetime
 
 from molcajete_prep.bundle import BuildResult, count_classifications
 from molcajete_prep.classify import Classification, LemmaKey, TeachReason, exceeds_cap
-from molcajete_prep.glossing.models import GlossSource
+from molcajete_prep.glossing.models import GlossSource, is_model_source
+from molcajete_prep.glossing.pipeline import CONTEXT_ONLY
 
 TOP_TEACH_LEMMAS = 20
 ZIPF_SAMPLE = 12
@@ -123,14 +124,12 @@ def _render_glosses(result: BuildResult, lines: list[str]) -> None:
     lines.append("")
 
     flagged = [key for key in teach_keys if (g := glosses.get(key)) and g.mexicanism]
-    from_claude = sum(
-        1
-        for key in flagged
-        if (g := glosses[key]) and g.de_source is GlossSource.CLAUDE
+    from_model = sum(
+        1 for key in flagged if (g := glosses[key]) and is_model_source(g.de_source)
     )
     lines.append(
         f"  {'Mexicanism flagged':<28} {len(flagged):>7,}"
-        f"   (wiktionary {len(flagged) - from_claude:,} · claude {from_claude:,})"
+        f"   (wiktionary {len(flagged) - from_model:,} · model {from_model:,})"
     )
 
     if glossing.cache_hits:
@@ -141,15 +140,12 @@ def _render_glosses(result: BuildResult, lines: list[str]) -> None:
     else:
         lines.append(f"  {'Served from the gloss cache':<28} {'none':>7}   (first book)")
 
-    if glossing.ran_claude:
-        batch = glossing.batch
+    if glossing.ran_model:
+        stats = glossing.stats
+        who = f"{glossing.provider_name} {glossing.provider_model}".strip()
+        lines.append(f"  {'Sent to the model':<28} {glossing.sent_to_model:>7,}   ({who})")
         lines.append(
-            f"  {'Sent to Claude':<28} {glossing.sent_to_claude:>7,}"
-            f"   (~${batch.estimated_cost():.2f} at batch rates)"
-        )
-        rejected = batch.not_spanish
-        lines.append(
-            f"  {'Rejected as not Spanish':<28} {rejected:>7,}"
+            f"  {'Rejected as not Spanish':<28} {stats.not_spanish:>7,}"
             f"   of {len(result.lexicon.records):,} lexicon lemmas"
         )
         lines.append(
@@ -157,27 +153,23 @@ def _render_glosses(result: BuildResult, lines: list[str]) -> None:
             "would justify"
         )
         lines.append("     comparing against es_core_news_md — see CLAUDE.md.)")
-        if batch.truncated:
-            lines.append(f"  {'Glosses cut down to fit':<28} {batch.truncated:>7,}")
-        if batch.missing or batch.errored:
+        if stats.truncated:
+            lines.append(f"  {'Glosses cut down to fit':<28} {stats.truncated:>7,}")
+        if stats.missing or stats.errored:
             lines.append(
-                f"  {'Unanswered by the batch':<28} {batch.missing:>7,}"
-                f"   ({batch.errored} failed requests)"
+                f"  {'Unanswered by the model':<28} {stats.missing:>7,}"
+                f"   ({stats.errored} failed requests)"
             )
-        if not batch.cache_worked:
-            lines.append(
-                "  !! The instruction prompt was never served from cache. It has "
-                "probably slipped"
-            )
-            lines.append(
-                "     below the 1024-token minimum, which fails silently and "
-                "multiplies the bill."
-            )
+        # What only this provider can say about itself — dollars and prompt
+        # caching for a batch, wall clock and retries for a local model. The
+        # report does not need to know which one ran.
+        lines.extend(f"  {line}" for line in stats.report_lines())
+
     if glossing.skipped_by_limit:
         lines.append(
             f"  {'Left ungloszed by --gloss-limit':<28} {glossing.skipped_by_limit:>7,}"
         )
-    if glossing.de_wiktionary_mode != "verbatim":
+    if glossing.de_wiktionary_mode != CONTEXT_ONLY:
         lines.append(f"  German Wiktionary mode: {glossing.de_wiktionary_mode}")
     lines.append("")
 
@@ -195,7 +187,7 @@ def _render_glosses(result: BuildResult, lines: list[str]) -> None:
         en = (gloss.en if gloss else None) or "—"
         source = "".join(
             "W" if s in (GlossSource.DE_WIKTIONARY, GlossSource.EN_WIKTIONARY)
-            else "C" if s is GlossSource.CLAUDE
+            else "M" if is_model_source(s)
             else "-"
             for s in ((gloss.de_source if gloss else None), (gloss.en_source if gloss else None))
         )
@@ -205,7 +197,7 @@ def _render_glosses(result: BuildResult, lines: list[str]) -> None:
             f"  {record.lemma:<18} {record.pos:<6} {source}{mark} "
             f"DE {de:<26} EN {en}{note}"
         )
-    lines.append("  Source column: W wiktionary, C claude, - none. * mexicanism.")
+    lines.append("  Source column: W wiktionary, M model, - none. * mexicanism.")
     lines.append("")
 
 
