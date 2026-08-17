@@ -3,7 +3,10 @@ import { parseRoute, routeToHash, type Route } from '../../src/app/routes'
 import type { ChapterSummary } from '../../src/domain/ports/BookRepository'
 import type { ReadingPosition } from '../../src/domain/ports/ReadingPositionRepository'
 import type { LexiconEntry } from '../../src/domain/types'
-import { buildChapterListView } from '../../src/domain/view/chapterListView'
+import {
+  buildChapterListView,
+  type ChapterTeachingInput,
+} from '../../src/domain/view/chapterListView'
 import { buildGlossView } from '../../src/domain/view/glossView'
 import { buildLibraryView } from '../../src/domain/view/libraryView'
 import { readingFraction } from '../../src/domain/view/progress'
@@ -53,20 +56,29 @@ describe('buildChapterListView', () => {
     updatedAt,
   })
 
-  it('leaves an unopened chapter with no progress at all', () => {
-    const view = buildChapterListView(
+  const build = (
+    positions: Map<number, ReadingPosition> = new Map(),
+    teaching: Map<number, ChapterTeachingInput> = new Map(),
+    lexicon: Map<string, LexiconEntry> = new Map(),
+    known: Set<string> = new Set(),
+  ) =>
+    buildChapterListView(
       { title: 'Los del cerro', author: 'Anónimo' },
       chapters,
-      new Map(),
+      positions,
+      teaching,
+      lexicon,
+      known,
     )
+
+  it('leaves an unopened chapter with no progress at all', () => {
+    const view = build()
     expect(view.rows.map((row) => row.fraction)).toEqual([null, null, null])
     expect(view.resumeIndex).toBeNull()
   })
 
   it('resumes at the most recently read chapter, not the furthest one', () => {
-    const view = buildChapterListView(
-      { title: 'Los del cerro', author: 'Anónimo' },
-      chapters,
+    const view = build(
       new Map([
         [2, position(2, 0.9, new Date('2026-08-01T10:00:00Z'))],
         [0, position(0, 0.2, new Date('2026-08-14T10:00:00Z'))],
@@ -76,6 +88,61 @@ describe('buildChapterListView', () => {
     expect(view.rows[0]?.fraction).toBe(0.2)
     expect(view.rows[1]?.fraction).toBeNull()
     expect(view.rows[2]?.fraction).toBe(0.9)
+  })
+
+  describe('coverage and cards, per SPEC §13 decision 2', () => {
+    const lexicon = new Map<string, LexiconEntry>([
+      ['m1', { lemma: 'jacal', pos: 'NOUN', zipf: 2, bookCount: 5, firstChapter: 0, mexicanism: false }],
+      ['m2', { lemma: 'sierra', pos: 'NOUN', zipf: 3, bookCount: 5, firstChapter: 0, mexicanism: false }],
+    ])
+
+    /** 10 word tokens: 6 of m1, 2 of m2, 2 proper nouns. */
+    const teaching = new Map<number, ChapterTeachingInput>([
+      [
+        0,
+        {
+          vocabulary: {
+            counts: new Map([['m1', 6], ['m2', 2]]),
+            propnTokens: 2,
+            tokenCount: 10,
+          },
+          teach: ['m1', 'm2'],
+        },
+      ],
+    ])
+
+    it('counts proper nouns as covered before anything is learned', () => {
+      const view = build(new Map(), teaching, lexicon)
+      expect(view.rows[0]?.coverage).toBeCloseTo(0.2)
+    })
+
+    it('projects what the pending session would buy', () => {
+      const view = build(new Map(), teaching, lexicon)
+      expect(view.rows[0]?.projectedCoverage).toBe(1)
+      expect(view.rows[0]?.cardsToLearn).toBe(2)
+      expect(view.rows[0]?.sessionsToGo).toBe(1)
+    })
+
+    it('rises as lemmas become known', () => {
+      const view = build(new Map(), teaching, lexicon, new Set(['jacal']))
+      expect(view.rows[0]?.coverage).toBeCloseTo(0.8)
+    })
+
+    it('weights the book figure by chapter length', () => {
+      // Chapter 0 contributes 10 tokens at 0.2; the other two contribute their
+      // own tokenCounts at coverage 0, since they have no vocabulary yet.
+      const view = build(new Map(), teaching, lexicon)
+      expect(view.bookCoverage).toBeLessThan(0.2)
+      expect(view.bookCoverage).toBeGreaterThan(0)
+    })
+
+    it('offers no lock, ever — there is no such field on a row', () => {
+      // SPEC §13 decision 2: displayed, warned about, never blocking. A row
+      // carries numbers and nothing a screen could read as permission.
+      const view = build(new Map(), teaching, lexicon)
+      expect(view.rows[0]).not.toHaveProperty('locked')
+      expect(view.rows[0]).not.toHaveProperty('unlocked')
+    })
   })
 })
 

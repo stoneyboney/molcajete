@@ -78,7 +78,10 @@ export function bookDifficultyNote(
   sessionCount: number,
 ): string | null {
   if (fraction >= 0.9 || sessionCount <= 3) return null
-  return `Dieses Buch bräuchte ${sessions(sessionCount)}, um auf 90 % zu kommen. Ein leichteres Buch liest sich vielleicht besser.`
+  // Deliberately not "um auf 90 % zu kommen" — the number is how many sessions
+  // the whole teach set needs, which is not the same as the point at which
+  // coverage crosses the threshold. Say the thing that is actually true.
+  return `Bei ${percent(fraction)} Abdeckung stehen noch ${sessions(sessionCount)} an. Ein leichteres Buch liest sich vielleicht besser.`
 }
 
 export interface ImportFailure {

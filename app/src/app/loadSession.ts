@@ -14,8 +14,9 @@
  * `Chapter.teachSet` is not read here or anywhere else in the app.
  */
 
-import { countChapterVocabulary, type ChapterVocabulary } from '../domain/coverage'
+import { countChapterVocabulary } from '../domain/coverage'
 import { buildKnownState, type KnownState } from '../domain/knownLemmas'
+import type { ChapterTeachingInput } from '../domain/view/chapterListView'
 import { lemmaId } from '../domain/lemma'
 import type { BookRepository } from '../domain/ports/BookRepository'
 import type { CardRepository } from '../domain/ports/CardRepository'
@@ -105,20 +106,36 @@ export async function loadSession(
   }
 }
 
-/** What the chapter list needs, without touching a single paragraph. */
-export interface ChapterTeachingState {
-  vocabulary: ChapterVocabulary
-  cardsToLearn: number
-}
+/**
+ * The chapter list's teach sets, recomputed for every chapter at once.
+ *
+ * Reads no paragraphs: the counts come from the cached `chapterVocab` rows and
+ * the rules only need the lexicon. That is the whole reason those rows exist —
+ * doing this through `getChapter` would deserialise the entire book to answer a
+ * question about a few thousand integers.
+ */
+export async function loadChapterTeaching(
+  bookId: BookId,
+  deps: Pick<SessionDependencies, 'books' | 'cards' | 'known'>,
+): Promise<{
+  teaching: Map<number, ChapterTeachingInput>
+  lexicon: Map<LemmaKey, LexiconEntry>
+  state: KnownState
+}> {
+  const [vocabularies, lexicon, state] = await Promise.all([
+    deps.books.listChapterVocabularies(bookId),
+    deps.books.getLexicon(bookId),
+    loadKnownState(deps.cards, deps.known),
+  ])
 
-export function teachingStateFor(
-  vocabulary: ChapterVocabulary,
-  lexicon: ReadonlyMap<LemmaKey, LexiconEntry>,
-  state: KnownState,
-): ChapterTeachingState {
-  const { teach } = selectTeachSet(vocabulary.counts, lexicon, state.known, {
-    ...DEFAULT_TEACH_SET_OPTIONS,
-    carded: state.carded,
-  })
-  return { vocabulary, cardsToLearn: teach.length }
+  const teaching = new Map<number, ChapterTeachingInput>()
+  for (const [index, vocabulary] of vocabularies) {
+    const { teach } = selectTeachSet(vocabulary.counts, lexicon, state.known, {
+      ...DEFAULT_TEACH_SET_OPTIONS,
+      carded: state.carded,
+    })
+    teaching.set(index, { vocabulary, teach })
+  }
+
+  return { teaching, lexicon, state }
 }
