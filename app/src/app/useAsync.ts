@@ -27,8 +27,8 @@ export function useAsync<T>(load: () => Promise<T>, deps: unknown[]): Async<T> {
     return () => {
       live = false
     }
-    // The caller states the dependencies; `load` is expected to close over them.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // The caller states the dependencies rather than passing a memoised
+    // `load`; every call site closes over exactly the values it lists.
   }, deps)
 
   return state

@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type MouseEvent as ReactMouseEvent,
+} from 'react'
 import { useRepositories } from '../app/repositories'
 import { LIBRARY } from '../app/routes'
 import { useAsync } from '../app/useAsync'
@@ -103,7 +110,7 @@ function ChapterReader({
   // One listener for the whole chapter. Tapping a word means finding the
   // nearest ancestor carrying a lexicon key, which is the word span itself or
   // the ruby around it.
-  const onTap = useCallback((event: React.MouseEvent<HTMLElement>) => {
+  const onTap = useCallback((event: ReactMouseEvent<HTMLElement>) => {
     const target = event.target
     if (!(target instanceof Element)) return
     const word = target.closest('[data-t]')
@@ -171,8 +178,10 @@ function ChapterReader({
 function ProgressBar({ fraction }: { fraction: number }) {
   return (
     <div
-      className="bg-accent fixed top-0 left-0 z-30 h-0.5 transition-[width] duration-150"
-      style={{ width: `${fraction * 100}%` }}
+      className="bg-accent fixed left-0 z-30 h-0.5 transition-[width] duration-150"
+      // Below the status bar, not under it: the web view runs full-bleed in
+      // standalone mode, so a bar at top 0 hides behind the clock.
+      style={{ width: `${fraction * 100}%`, top: 'env(safe-area-inset-top)' }}
       role="progressbar"
       aria-valuemin={0}
       aria-valuemax={100}

@@ -11,10 +11,6 @@ import {
 
 const numbers = new Intl.NumberFormat('de-DE')
 
-export function count(value: number): string {
-  return numbers.format(value)
-}
-
 export function words(value: number): string {
   return `${numbers.format(value)} Wörter`
 }

@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 
 const SAVE_DEBOUNCE_MS = 1000
 
@@ -24,13 +24,15 @@ export function useReadingPosition(
   persist: (paragraphId: string, index: number) => void,
 ): number {
   const [current, setCurrent] = useState(0)
-  const indexOf = useRef(new Map<string, number>())
   const latest = useRef<{ id: string; index: number } | null>(null)
   const timer = useRef<number | null>(null)
   const persistRef = useRef(persist)
   persistRef.current = persist
 
-  indexOf.current = new Map(paragraphIds.map((id, index) => [id, index]))
+  const indexOf = useMemo(
+    () => new Map(paragraphIds.map((id, index) => [id, index])),
+    [paragraphIds],
+  )
 
   // Restore before the first paint the user sees, then again once the real
   // layout has replaced the intrinsic-size estimates.
@@ -54,7 +56,7 @@ export function useReadingPosition(
       (entries) => {
         for (const entry of entries) {
           const id = (entry.target as HTMLElement).dataset['pid']
-          const index = id === undefined ? undefined : indexOf.current.get(id)
+          const index = id === undefined ? undefined : indexOf.get(id)
           if (index === undefined) continue
           if (entry.isIntersecting) onScreen.add(index)
           else onScreen.delete(index)
@@ -104,7 +106,7 @@ export function useReadingPosition(
       document.removeEventListener('visibilitychange', onVisibility)
       flush()
     }
-  }, [paragraphIds])
+  }, [paragraphIds, indexOf])
 
   return current
 }
