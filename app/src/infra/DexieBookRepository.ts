@@ -1,4 +1,8 @@
 import type { Table } from 'dexie'
+import {
+  countChapterVocabulary,
+  type ChapterVocabulary,
+} from '../domain/coverage'
 import type {
   BookRepository,
   BookSummary,
@@ -11,7 +15,13 @@ import type {
   LemmaKey,
   LexiconEntry,
 } from '../domain/types'
-import { db, type ChapterRow, type LexiconRow, type MolcajeteDatabase } from './db'
+import {
+  db,
+  type ChapterRow,
+  type ChapterVocabularyRow,
+  type LexiconRow,
+  type MolcajeteDatabase,
+} from './db'
 
 /**
  * Written in chunks rather than one bulkPut. A 9,000-entry lexicon in a single
@@ -19,6 +29,28 @@ import { db, type ChapterRow, type LexiconRow, type MolcajeteDatabase } from './
  * chunks let each batch be collected while the transaction stays open.
  */
 const WRITE_CHUNK = 500
+
+function toVocabularyRow(
+  bookId: BookId,
+  index: number,
+  vocabulary: ChapterVocabulary,
+): ChapterVocabularyRow {
+  return {
+    bookId,
+    index,
+    counts: Object.fromEntries(vocabulary.counts),
+    propnTokens: vocabulary.propnTokens,
+    tokenCount: vocabulary.tokenCount,
+  }
+}
+
+function fromVocabularyRow(row: ChapterVocabularyRow): ChapterVocabulary {
+  return {
+    counts: new Map(Object.entries(row.counts)),
+    propnTokens: row.propnTokens,
+    tokenCount: row.tokenCount,
+  }
+}
 
 function toChapter(row: ChapterRow): Chapter {
   return {
@@ -64,6 +96,55 @@ export class DexieBookRepository implements BookRepository {
     return row ? toChapter(row) : undefined
   }
 
+  /**
+   * Cached, and computed on a miss rather than migrated.
+   *
+   * A book imported before this store existed has no row here, and the counts
+   * are pure a function of the chapter it already has — so the first read
+   * computes them and writes them back. That is why version 2 needs no upgrade
+   * function and no re-import.
+   */
+  async getChapterVocabulary(
+    id: BookId,
+    index: number,
+  ): Promise<ChapterVocabulary | undefined> {
+    const cached = await this.database.chapterVocab.get([id, index])
+    if (cached) return fromVocabularyRow(cached)
+
+    const chapter = await this.getChapter(id, index)
+    if (!chapter) return undefined
+
+    const vocabulary = countChapterVocabulary(chapter)
+    await this.database.chapterVocab.put(toVocabularyRow(id, index, vocabulary))
+    return vocabulary
+  }
+
+  async listChapterVocabularies(
+    id: BookId,
+  ): Promise<Map<number, ChapterVocabulary>> {
+    const rows = await this.database.chapterVocab.where({ bookId: id }).toArray()
+    const found = new Map(rows.map((row) => [row.index, fromVocabularyRow(row)]))
+
+    // Fill any gap left by a book imported under version 1. This reads the
+    // chapters, which is expensive — but exactly once per book, ever.
+    const chapters = await this.database.chapters.where({ bookId: id }).toArray()
+    for (const chapter of chapters) {
+      if (found.has(chapter.index)) continue
+      const vocabulary = countChapterVocabulary(toChapter(chapter))
+      await this.database.chapterVocab.put(
+        toVocabularyRow(id, chapter.index, vocabulary),
+      )
+      found.set(chapter.index, vocabulary)
+    }
+
+    return found
+  }
+
+  async getLexicon(id: BookId): Promise<Map<LemmaKey, LexiconEntry>> {
+    const rows = await this.database.lexicon.where({ bookId: id }).toArray()
+    return new Map(rows.map((row) => [row.key, row.entry]))
+  }
+
   async getLexiconEntries(
     id: BookId,
     keys: readonly LemmaKey[],
@@ -82,11 +163,12 @@ export class DexieBookRepository implements BookRepository {
 
   async saveBundle(bundle: Bundle, importedAt: Date): Promise<void> {
     const bookId = bundle.book.id
-    const { books, chapters, lexicon, positions } = this.database
+    const { books, chapters, lexicon, positions, chapterVocab, sessions } =
+      this.database
 
     await this.database.transaction(
       'rw',
-      [books, chapters, lexicon, positions],
+      [books, chapters, lexicon, positions, chapterVocab, sessions],
       async () => {
         // Re-importing a book replaces it. Anything else leaves a chapter from
         // the old build sitting next to the lexicon of the new one.
@@ -113,24 +195,43 @@ export class DexieBookRepository implements BookRepository {
           ([key, entry]) => ({ bookId, key, entry }),
         )
         await this.putChunked(lexicon, lexiconRows)
+
+        // Derived here rather than on first read, because the paragraphs are
+        // already in memory at this point and will not be again.
+        await this.putChunked(
+          chapterVocab,
+          bundle.chapters.map((chapter) =>
+            toVocabularyRow(bookId, chapter.index, countChapterVocabulary(chapter)),
+          ),
+        )
       },
     )
   }
 
   async deleteBook(id: BookId): Promise<void> {
-    const { books, chapters, lexicon, positions } = this.database
+    const { books, chapters, lexicon, positions, chapterVocab, sessions } =
+      this.database
     await this.database.transaction(
       'rw',
-      [books, chapters, lexicon, positions],
+      [books, chapters, lexicon, positions, chapterVocab, sessions],
       () => this.clear(id),
     )
   }
 
+  /**
+   * Everything scoped to this book, and deliberately nothing else.
+   *
+   * `cards` and `knownLemmas` are untouched. Removing a book removes its text;
+   * it does not unlearn its vocabulary, and re-importing it must not re-teach
+   * words you already know.
+   */
   private async clear(id: BookId): Promise<void> {
     await this.database.books.delete(id)
     await this.database.chapters.where({ bookId: id }).delete()
     await this.database.lexicon.where({ bookId: id }).delete()
     await this.database.positions.where({ bookId: id }).delete()
+    await this.database.chapterVocab.where({ bookId: id }).delete()
+    await this.database.sessions.where({ bookId: id }).delete()
   }
 
   private async putChunked<T, K>(table: Table<T, K>, rows: T[]): Promise<void> {
