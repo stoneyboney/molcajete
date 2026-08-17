@@ -28,3 +28,32 @@ def nlp():
     from molcajete_prep.nlp import load_pipeline
 
     return load_pipeline()
+
+
+@pytest.fixture(autouse=True)
+def no_real_extracts(monkeypatch):
+    """Point the glossing pass at a directory that does not exist.
+
+    Without this, any test that builds a bundle without saying `gloss=False`
+    streams the 22.9 GB English Wiktionary dump — a minute per test, silently,
+    and only on machines that happen to have downloaded it. A path that cannot
+    exist turns that into an immediate, explicit SourceUnavailableError.
+
+    Deliberately not under `tmp_path`: several tests assert their `tmp_path` is
+    empty, and a stray directory there would fail them for the wrong reason.
+    """
+    from molcajete_prep.glossing import pipeline
+
+    monkeypatch.setattr(
+        pipeline, "DEFAULT_EXTRACT_DIR", Path("/nonexistent/molcajete-extracts")
+    )
+
+
+@pytest.fixture(autouse=True)
+def no_shared_cache(monkeypatch, tmp_path):
+    """Never let a test read or write the developer's real gloss cache."""
+    from molcajete_prep.glossing import cache as cache_module
+
+    monkeypatch.setattr(
+        cache_module, "DEFAULT_CACHE_PATH", tmp_path / "test-glosses.sqlite3"
+    )

@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import re
 import unicodedata
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -24,6 +25,8 @@ from molcajete_prep.classify import (
     classify_all,
 )
 from molcajete_prep.epub import ChapterSource, book_metadata, extract_chapters
+from molcajete_prep.glossing.models import Gloss
+from molcajete_prep.glossing.pipeline import GlossingOptions, GlossingResult, gloss_lexicon
 from molcajete_prep.lexicon import Lexicon, build_lexicon, example_sentence
 from molcajete_prep.nlp import Token, load_pipeline, tokenize_paragraphs
 from molcajete_prep.schema import SCHEMA_VERSION, validate_bundle
@@ -46,6 +49,8 @@ class BuildResult:
     chapter_vocabulary: list[ChapterVocabulary]
     options: ClassificationOptions
     known_lemmas: frozenset[str] = field(default=frozenset())
+    glossing: GlossingResult = field(default_factory=GlossingResult)
+    glossed: bool = True
 
     @property
     def book_id(self) -> str:
@@ -86,29 +91,44 @@ def _lexicon_json(
     lexicon: Lexicon,
     classifications: dict[LemmaKey, ClassificationResult],
     chapters: list[list[list[Token]]],
+    glosses: Mapping[LemmaKey, Gloss] | None = None,
 ) -> dict[str, Any]:
     """Serialize the lexicon.
 
-    Phase 1 fills only what it can compute. `de`, `en` and `regionNote` arrive in
-    Phase 2 — filling a field is not a shape change, so `schemaVersion` stays 1.
-    `mexicanism` is written explicitly as false rather than omitted, so that its
-    absence can never be mistaken for "not yet determined".
+    `de`, `en` and `regionNote` are written when the glossing pass produced
+    them and omitted when it did not — filling a field is not a shape change, so
+    `schemaVersion` stays 1. `mexicanism` is always written, explicitly false
+    rather than omitted, so that its absence can never be mistaken for "not yet
+    determined".
+
+    `not_spanish` and `corrected_lemma` deliberately do **not** reach the bundle.
+    They are diagnostics about the lemmatizer, and the reader has no use for a
+    field saying a word it is about to render is not a word.
 
     Example sentences are attached to teach-set lemmas only: a card is the only
     thing that displays one, and emitting them for every lemma would inflate the
     file for nothing.
     """
+    glosses = glosses or {}
     out: dict[str, Any] = {}
     for key in sorted(lexicon.records):
         record = lexicon.records[key]
+        gloss = glosses.get(key)
         entry: dict[str, Any] = {
             "lemma": record.lemma,
             "pos": record.pos,
             "zipf": round(record.zipf, _ZIPF_PRECISION),
             "bookCount": record.book_count,
             "firstChapter": record.first_chapter,
-            "mexicanism": False,
+            "mexicanism": bool(gloss and gloss.mexicanism),
         }
+        if gloss is not None:
+            if gloss.de:
+                entry["de"] = gloss.de
+            if gloss.en:
+                entry["en"] = gloss.en
+            if gloss.region_note:
+                entry["regionNote"] = gloss.region_note
 
         if classifications[key].is_teach:
             example = example_sentence(record, chapters)
@@ -130,6 +150,10 @@ def build_bundle(
     options: ClassificationOptions = ClassificationOptions(),
     split_on_heading: bool = False,
     keep_boilerplate: bool = False,
+    gloss: bool = True,
+    gloss_options: GlossingOptions | None = None,
+    gloss_client: Any = None,
+    on_status: Any = None,
 ) -> BuildResult:
     """Read an EPUB and produce a validated `schemaVersion: 1` bundle."""
     epub_path = Path(epub_path)
@@ -147,13 +171,32 @@ def build_bundle(
         tokenize_paragraphs(nlp, list(source.paragraphs)) for source in sources
     ]
 
-    lexicon = build_lexicon(chapters)
-    entries = lexicon.entries_for_classification()
-    classifications = classify_all(entries, known_lemmas, options)
-    vocabulary = assign_to_chapters(entries, lexicon.chapter_keys, known_lemmas, options)
-
     resolved_title = title or metadata["title"] or epub_path.stem
     resolved_author = author or metadata["author"] or "Desconocido"
+    resolved_id = book_id or make_book_id(resolved_author, resolved_title)
+
+    lexicon = build_lexicon(chapters)
+
+    # Glossing runs *before* classification, not after. `mexicanism` is one of
+    # the three §5 teach rules, so the flag has to exist before the rules are
+    # applied — a bundle built with --no-gloss classifies differently, and the
+    # report says which mode produced it.
+    glossing = (
+        gloss_lexicon(
+            lexicon,
+            chapters,
+            book_id=resolved_id,
+            options=gloss_options or GlossingOptions(),
+            client=gloss_client,
+            on_status=on_status,
+        )
+        if gloss
+        else GlossingResult()
+    )
+
+    entries = lexicon.entries_for_classification(glossing.mexicanism_by_key())
+    classifications = classify_all(entries, known_lemmas, options)
+    vocabulary = assign_to_chapters(entries, lexicon.chapter_keys, known_lemmas, options)
 
     chapters_json = []
     total_tokens = 0
@@ -181,12 +224,12 @@ def build_bundle(
             }
         )
 
-    lexicon_json = _lexicon_json(lexicon, classifications, chapters)
+    lexicon_json = _lexicon_json(lexicon, classifications, chapters, glossing.glosses)
 
     bundle = {
         "schemaVersion": SCHEMA_VERSION,
         "book": {
-            "id": book_id or make_book_id(resolved_author, resolved_title),
+            "id": resolved_id,
             "title": resolved_title,
             "author": resolved_author,
             "language": LANGUAGE,
@@ -207,6 +250,8 @@ def build_bundle(
         chapter_vocabulary=vocabulary,
         options=options,
         known_lemmas=known_lemmas,
+        glossing=glossing,
+        glossed=gloss,
     )
 
 

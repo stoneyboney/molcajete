@@ -26,6 +26,12 @@ Field reference:
 | `l`  | lemma, lower-cased; absent on punctuation, numerals and whitespace |
 | `p`  | part-of-speech tag |
 | `t`  | lexicon key; absent when the token has no entry (proper nouns, numerals, punctuation) |
+
+Lexicon entries gained `de`, `en` and `regionNote` in Phase 2. They are
+**optional**, present only where the glossing pass found something, and their
+arrival did not bump `schemaVersion`: the §4 shape already reserved them, and a
+decoder written against Phase 1 ignores fields it does not know. A Phase 1
+bundle is still a valid Phase 2 bundle — with no glosses in it.
 """
 
 from __future__ import annotations
@@ -45,6 +51,11 @@ _BOOK_FIELDS = (
 )
 _CHAPTER_FIELDS = ("index", "title", "tokenCount", "paragraphs", "teachSet", "glossOnly")
 _LEXICON_FIELDS = ("lemma", "pos", "zipf", "bookCount", "firstChapter", "mexicanism")
+
+# Written when the glossing pass produced them, omitted when it did not. An
+# absent `de` means "no gloss"; an empty string would mean the same thing while
+# rendering as a blank line on a card, so the validator rejects it.
+_OPTIONAL_GLOSS_FIELDS = ("de", "en", "regionNote")
 
 
 class BundleValidationError(ValueError):
@@ -124,6 +135,19 @@ def validate_bundle(bundle: Any) -> None:
     for key, entry in lexicon.items():
         for field in _LEXICON_FIELDS:
             _require(field in entry, f"lexicon[{key!r}]: missing '{field}'")
+        for field in _OPTIONAL_GLOSS_FIELDS:
+            if field in entry:
+                _require(
+                    isinstance(entry[field], str) and entry[field].strip() != "",
+                    f"lexicon[{key!r}]: '{field}' is present but empty — omit it instead",
+                )
+        # A card that claims Mexican usage without saying what kind is a claim
+        # the reader cannot act on, so the two travel together.
+        if entry["mexicanism"]:
+            _require(
+                "regionNote" in entry,
+                f"lexicon[{key!r}]: mexicanism is true but no 'regionNote' says where or how",
+            )
 
     for index, chapter in enumerate(bundle["chapters"]):
         _validate_chapter(chapter, index, lexicon)

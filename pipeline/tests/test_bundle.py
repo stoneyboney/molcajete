@@ -21,7 +21,7 @@ BUILT_AT = datetime(2026, 8, 16, 20, 14, 3)
 @pytest.fixture(scope="module")
 def built(fixture_epub):
     """Build the fixture bundle once; several tests read it."""
-    return build_bundle(fixture_epub)
+    return build_bundle(fixture_epub, gloss=False)
 
 
 class TestSlugs:
@@ -173,8 +173,8 @@ class TestLexiconSerialization:
 
 class TestDeterminism:
     def test_building_twice_produces_byte_identical_json(self, fixture_epub, tmp_path):
-        first = write_bundle(build_bundle(fixture_epub).bundle, tmp_path / "a.json")
-        second = write_bundle(build_bundle(fixture_epub).bundle, tmp_path / "b.json")
+        first = write_bundle(build_bundle(fixture_epub, gloss=False).bundle, tmp_path / "a.json")
+        second = write_bundle(build_bundle(fixture_epub, gloss=False).bundle, tmp_path / "b.json")
 
         assert first.read_bytes() == second.read_bytes()
 
@@ -193,10 +193,10 @@ class TestDeterminism:
 
 class TestKnownLemmas:
     def test_seeding_a_known_lemma_removes_it_from_every_teach_set(self, fixture_epub):
-        unseeded = build_bundle(fixture_epub)
+        unseeded = build_bundle(fixture_epub, gloss=False)
         taught = unseeded.bundle["lexicon"][unseeded.chapter_vocabulary[0].teach[0]]
 
-        seeded = build_bundle(fixture_epub, known_lemmas=frozenset({taught["lemma"]}))
+        seeded = build_bundle(fixture_epub, gloss=False, known_lemmas=frozenset({taught["lemma"]}))
 
         all_teach = [k for c in seeded.bundle["chapters"] for k in c["teachSet"]]
         assert all(
@@ -207,9 +207,10 @@ class TestKnownLemmas:
 
 class TestOptions:
     def test_raising_the_zipf_threshold_shrinks_the_teach_set(self, fixture_epub):
-        default = build_bundle(fixture_epub)
+        default = build_bundle(fixture_epub, gloss=False)
         strict = build_bundle(
             fixture_epub,
+            gloss=False,
             options=ClassificationOptions(min_book_count=99, zipf_threshold=9.0),
         )
 

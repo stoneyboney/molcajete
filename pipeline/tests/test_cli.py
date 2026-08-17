@@ -9,7 +9,7 @@ from molcajete_prep.schema import validate_bundle
 
 
 def test_build_writes_a_bundle_and_a_report(fixture_epub, tmp_path, capsys):
-    exit_code = main([str(fixture_epub), "--out", str(tmp_path)])
+    exit_code = main([str(fixture_epub), "--out", str(tmp_path), "--no-gloss"])
     capsys.readouterr()
 
     assert exit_code == 0
@@ -21,7 +21,9 @@ def test_build_writes_a_bundle_and_a_report(fixture_epub, tmp_path, capsys):
 
 
 def test_book_id_can_be_overridden(fixture_epub, tmp_path, capsys):
-    main([str(fixture_epub), "--out", str(tmp_path), "--book-id", "azuela-los-de-abajo"])
+    main(
+        [str(fixture_epub), "--out", str(tmp_path), "--no-gloss", "--book-id", "azuela-los-de-abajo"]
+    )
     capsys.readouterr()
 
     assert (tmp_path / f"azuela-los-de-abajo{BUNDLE_SUFFIX}").exists()
@@ -33,6 +35,7 @@ def test_title_and_author_can_be_overridden(fixture_epub, tmp_path, capsys):
             str(fixture_epub),
             "--out",
             str(tmp_path),
+            "--no-gloss",
             "--title",
             "Los de abajo",
             "--author",
@@ -48,7 +51,7 @@ def test_title_and_author_can_be_overridden(fixture_epub, tmp_path, capsys):
 
 
 def test_report_only_writes_nothing(fixture_epub, tmp_path, capsys):
-    exit_code = main([str(fixture_epub), "--out", str(tmp_path), "--report-only"])
+    exit_code = main([str(fixture_epub), "--out", str(tmp_path), "--no-gloss", "--report-only"])
     output = capsys.readouterr().out
 
     assert exit_code == 0
@@ -62,6 +65,7 @@ def test_thresholds_are_settable_from_the_command_line(fixture_epub, tmp_path, c
             str(fixture_epub),
             "--out",
             str(tmp_path),
+            "--no-gloss",
             "--zipf-threshold",
             "9.0",
             "--min-book-count",

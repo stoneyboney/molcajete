@@ -105,8 +105,11 @@ class GlossCache:
     retroactively change an already-built bundle.
     """
 
-    def __init__(self, path: str | Path = DEFAULT_CACHE_PATH) -> None:
-        self.path = Path(path)
+    def __init__(self, path: str | Path | None = None) -> None:
+        # Resolved here rather than as a default argument so that the module
+        # global can be redirected — the test suite points it at a temporary
+        # file so a test run can never read or write the real cache.
+        self.path = Path(DEFAULT_CACHE_PATH if path is None else path)
         if self.path.name != ":memory:":
             self.path.parent.mkdir(parents=True, exist_ok=True)
         self._connection = sqlite3.connect(self.path)

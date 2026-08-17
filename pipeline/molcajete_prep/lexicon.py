@@ -21,7 +21,7 @@ is made per lemma over the whole book rather than per token: see
 from __future__ import annotations
 
 from collections import Counter
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 
 from wordfreq import zipf_frequency
@@ -103,9 +103,19 @@ class Lexicon:
             return "PROPN"
         return self.rescued_pos.get(token.lemma or "", "NOUN")
 
-    def entries_for_classification(self) -> dict[LemmaKey, LexiconEntry]:
+    def entries_for_classification(
+        self, mexicanism: Mapping[LemmaKey, bool] | None = None
+    ) -> dict[LemmaKey, LexiconEntry]:
+        """The view the §5 rules consume.
+
+        `mexicanism` comes from the glossing pass, which is why glossing runs
+        before classification: `mexicanism && bookCount >= 2` is a teach rule, so
+        the flag has to exist before the rules are applied. Omitting it leaves
+        every entry false, which is what a `--no-gloss` build gets.
+        """
+        mexicanism = mexicanism or {}
         return {
-            key: record.to_classification_entry()
+            key: record.to_classification_entry(mexicanism=mexicanism.get(key, False))
             for key, record in self.records.items()
         }
 

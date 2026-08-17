@@ -10,10 +10,22 @@ from pathlib import Path
 
 from molcajete_prep.bundle import build_bundle, write_bundle
 from molcajete_prep.classify import ClassificationOptions
+from molcajete_prep.glossing.pipeline import CONTEXT_ONLY, VERBATIM, GlossingOptions
 from molcajete_prep.report import render_report
 
 BUNDLE_SUFFIX = ".molcajete.json"
 REPORT_SUFFIX = ".report.txt"
+
+
+def _print_batch_status(batch: object) -> None:
+    """Keep a long batch from looking like a hang. Batches can run for an hour."""
+    counts = getattr(batch, "request_counts", None)
+    processing = getattr(counts, "processing", "?")
+    print(
+        f"  glossing: batch {getattr(batch, 'processing_status', '?')}, "
+        f"{processing} requests still processing",
+        file=sys.stderr,
+    )
 
 
 def load_known_lemmas(path: str | Path | None) -> frozenset[str]:
@@ -84,6 +96,37 @@ def build_parser() -> argparse.ArgumentParser:
         default=ClassificationOptions.min_book_count,
         help="teach any lemma occurring at least this often (default: 3)",
     )
+
+    glossing = parser.add_argument_group("glossing")
+    glossing.add_argument(
+        "--no-gloss",
+        action="store_true",
+        help="skip glossing entirely. Leaves de/en empty and mexicanism false, "
+        "which also means no lemma is taught by the mexicanism rule.",
+    )
+    glossing.add_argument(
+        "--gloss-offline",
+        action="store_true",
+        help="use Wiktionary and the cache only, never the Claude API",
+    )
+    glossing.add_argument(
+        "--gloss-limit",
+        type=int,
+        help="send at most this many lemmas to Claude, most-used first",
+    )
+    glossing.add_argument(
+        "--regloss",
+        action="store_true",
+        help="ignore cached glosses and fetch them again. Use when a cached "
+        "gloss was disambiguated against a different book's sentence.",
+    )
+    glossing.add_argument(
+        "--de-wiktionary",
+        choices=(VERBATIM, CONTEXT_ONLY),
+        default=VERBATIM,
+        help="whether a short German Wiktionary gloss is used as it stands, or "
+        "demoted to context so Claude writes every German gloss (default: verbatim)",
+    )
     return parser
 
 
@@ -96,6 +139,13 @@ def main(argv: list[str] | None = None) -> int:
         max_cards_per_session=args.max_cards,
     )
 
+    gloss_options = GlossingOptions(
+        use_claude=not args.gloss_offline,
+        regloss=args.regloss,
+        claude_limit=args.gloss_limit,
+        de_wiktionary=args.de_wiktionary,
+    )
+
     result = build_bundle(
         args.epub,
         book_id=args.book_id,
@@ -105,6 +155,9 @@ def main(argv: list[str] | None = None) -> int:
         options=options,
         split_on_heading=args.split_on_heading,
         keep_boilerplate=args.keep_boilerplate,
+        gloss=not args.no_gloss,
+        gloss_options=gloss_options,
+        on_status=_print_batch_status,
     )
 
     if args.report_only:
