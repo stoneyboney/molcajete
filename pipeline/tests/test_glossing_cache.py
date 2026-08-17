@@ -294,3 +294,40 @@ class TestPosMapping:
         """`name` is a proper noun, which CLAUDE.md excludes entirely; the rest
         are not lemmas the lexicon ever holds."""
         assert upos_candidates(pos) == ()
+
+
+class TestMexicanismInvariant:
+    """A card claiming Mexican usage without saying what kind is a claim the
+    reader cannot act on, so `validate_bundle` rejects the pair. Holding it in
+    Gloss itself covers every way one comes into being — including a row written
+    by an older version of this code, which is how the gap was found."""
+
+    def test_a_flag_without_a_note_is_given_one(self):
+        assert Gloss(lemma="tomar", pos="VERB", mexicanism=True).region_note == "Mexiko"
+
+    def test_a_specific_note_is_left_alone(self):
+        gloss = Gloss(
+            lemma="chido", pos="ADJ", mexicanism=True,
+            region_note="Mexiko, umgangssprachlich",
+        )
+
+        assert gloss.region_note == "Mexiko, umgangssprachlich"
+
+    def test_a_lemma_that_is_not_a_mexicanism_gets_no_note(self):
+        assert Gloss(lemma="libro", pos="NOUN", de="das Buch").region_note is None
+
+    def test_a_stale_cache_row_is_repaired_on_the_way_out(self, cache):
+        """Rows written before the invariant existed must not fail a build."""
+        cache._connection.execute(
+            "INSERT INTO glosses (lemma, pos, en, mexicanism, region_note, created_at)"
+            " VALUES ('tomar', 'VERB', 'take', 1, NULL, '2026-08-17T00:00:00')"
+        )
+        cache._connection.commit()
+
+        assert cache.get("tomar", "VERB").region_note == "Mexiko"
+
+    def test_merging_cannot_produce_a_flag_without_a_note(self):
+        plain = Gloss(lemma="tomar", pos="VERB", en="take")
+        flagged = Gloss(lemma="tomar", pos="VERB", mexicanism=True)
+
+        assert plain.merged_with(flagged).region_note == "Mexiko"

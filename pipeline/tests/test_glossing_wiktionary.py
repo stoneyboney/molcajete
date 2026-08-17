@@ -330,18 +330,45 @@ class TestIndexing:
 
         assert index[("vino", "NOUN")].gloss.en == "wine"
 
-    def test_a_later_record_can_still_contribute_a_flag_it_alone_carries(self):
+    def test_a_later_record_does_not_relabel_the_meaning_already_chosen(self):
+        """A region label describes the sense it sits on. Carrying it across
+        records attached it to a meaning it was never about — `mano` came out
+        glossed "hand" and labelled "Mexiko, Slang" from the *bro* sense, and
+        `coche` was labelled "Mexiko, Spanien" at once. Both were real."""
         index = index_records(
             [
                 record("padre", "noun", [sense("father")]),
-                record("padre", "adj", [sense("great", tags=["Mexico"])]),
                 record("padre", "noun", [sense("priest", tags=["Mexico"])]),
             ],
             source=EN,
         )
 
         assert index[("padre", "NOUN")].gloss.en == "father"
-        assert index[("padre", "NOUN")].gloss.mexicanism is True
+        assert index[("padre", "NOUN")].gloss.mexicanism is False
+        assert index[("padre", "NOUN")].gloss.region_note is None
+
+    def test_a_flag_is_kept_where_it_belongs_to_the_chosen_sense(self):
+        """The other half of the same rule: `padre` the adjective *is* Mexican
+        slang, and its own entry keeps the label."""
+        index = index_records(
+            [record("padre", "adj", [sense("great", tags=["Mexico"])])], source=EN
+        )
+
+        assert index[("padre", "ADJ")].gloss.mexicanism is True
+
+    def test_a_second_record_may_still_supply_a_language_the_first_lacked(self):
+        """Text merging is the whole point of running two editions."""
+        index = index_records(
+            [record("libro", "noun", [sense("book")])], source=EN
+        )
+        german = index_records(
+            [record("libro", "noun", [sense("das Buch")], lang="Spanisch")], source=DE
+        )
+        merged = index[("libro", "NOUN")].gloss.text_filled_from(
+            german[("libro", "NOUN")].gloss
+        )
+
+        assert (merged.en, merged.de) == ("book", "das Buch")
 
     def test_lemmas_are_lowercased_to_match_the_lexicon(self):
         index = index_records([record("Perro", "noun", [sense("dog")])], source=EN)
@@ -433,3 +460,68 @@ class TestMerging:
 
         assert merged.mexicanism is True
         assert merged.region_note == "Mexiko"
+
+
+class TestRegionNoteFromCategories:
+    """Wiktionary is inconsistent about tags versus categories. Reading only
+    tags set `mexicanism` on category-only senses while leaving the note empty,
+    which the bundle validator rejects — it surfaced on the first real book."""
+
+    def test_a_category_only_mexicanism_still_gets_a_note(self):
+        built = gloss_from_record(
+            record(
+                "popote",
+                "noun",
+                [sense("drinking straw", categories=["Mexican Spanish"])],
+            ),
+            source=EN,
+        )
+
+        assert built.gloss.mexicanism is True
+        assert built.gloss.region_note == "Mexiko"
+
+    def test_every_flagged_sense_carries_a_note(self):
+        """The invariant the bundle validator enforces, checked at the source."""
+        for categories in (["Mexican Spanish"], ["Latin American Spanish"]):
+            for tags in ([], ["Mexico"], ["colloquial"]):
+                built = gloss_from_record(
+                    record("x", "noun", [sense("thing", tags=tags, categories=categories)]),
+                    source=EN,
+                )
+                if built.gloss.mexicanism:
+                    assert built.gloss.region_note, (tags, categories)
+
+    def test_a_tag_and_its_category_are_not_repeated(self):
+        built = gloss_from_record(
+            record(
+                "chido",
+                "adj",
+                [sense("cool", tags=["Mexico"], categories=["Mexican Spanish"])],
+            ),
+            source=EN,
+        )
+
+        assert built.gloss.region_note == "Mexiko"
+
+
+class TestSensesUsedOnBothSidesOfTheAtlantic:
+    """A sense labelled for Spain *and* Mexico is not a regional divergence.
+    Real case: `coche` is "car" in both, and flagging it produced a card marked
+    "Mexiko, Spanien" — a contradiction on its face."""
+
+    def test_a_sense_marked_for_both_is_not_a_mexicanism(self):
+        both = sense("car, automobile", tags=["Mexico", "Spain", "masculine"])
+
+        assert sense_is_mexican(both, entry_is_peninsular_anywhere=True) is False
+
+    def test_the_peninsular_category_settles_it_too(self):
+        both = sense(
+            "car", tags=["Mexico"], categories=["Mexican Spanish", "Peninsular Spanish"]
+        )
+
+        assert sense_is_mexican(both, entry_is_peninsular_anywhere=True) is False
+
+    def test_a_mexico_only_sense_is_untouched(self):
+        assert sense_is_mexican(
+            sense("cool", tags=["Mexico"]), entry_is_peninsular_anywhere=True
+        ) is True

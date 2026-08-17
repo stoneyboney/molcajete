@@ -20,6 +20,10 @@ from enum import Enum
 MAX_UNITS = 3
 MAX_WORDS_PER_UNIT = 3
 
+# What a mexicanism says when nothing more specific is known. German, per
+# CLAUDE.md's language rule — this renders on the card.
+DEFAULT_REGION_NOTE = "Mexiko"
+
 
 class GlossSource(str, Enum):
     """Where a gloss came from. Reported, never written to the bundle."""
@@ -57,6 +61,19 @@ class Gloss:
     # so rewriting it here would orphan every token that points at this entry.
     corrected_lemma: str | None = None
 
+    def __post_init__(self) -> None:
+        """Hold the one invariant the bundle format insists on.
+
+        A card claiming Mexican usage without saying what kind is a claim the
+        reader cannot act on, so `validate_bundle` rejects the pair. Enforcing it
+        here rather than at each call site covers every way a Gloss comes into
+        being — parsed from either Wiktionary edition, returned by Claude, or
+        read back from a cache row written by an older version of this code.
+        That last one is not hypothetical: it is how the invariant was found.
+        """
+        if self.mexicanism and not self.region_note:
+            object.__setattr__(self, "region_note", DEFAULT_REGION_NOTE)
+
     @property
     def has_german(self) -> bool:
         return bool(self.de)
@@ -64,6 +81,10 @@ class Gloss:
     @property
     def has_english(self) -> bool:
         return bool(self.en)
+
+    @property
+    def has_any_gloss(self) -> bool:
+        return bool(self.de or self.en)
 
     def merged_with(self, other: Gloss) -> Gloss:
         """Fill this gloss's gaps from `other`, keeping what is already here.
@@ -82,6 +103,32 @@ class Gloss:
             region_note=self.region_note or other.region_note,
             not_spanish=self.not_spanish or other.not_spanish,
             corrected_lemma=self.corrected_lemma or other.corrected_lemma,
+        )
+
+    def text_filled_from(self, other: Gloss) -> Gloss:
+        """Take only missing gloss *text* from `other`, never its flags.
+
+        Used when merging two Wiktionary records for the same word. A region
+        label describes the sense it sits on, so carrying it across records
+        attaches it to a meaning it was never about: `coche` has a peninsular
+        sense and a Mexican one, and OR-ing them produced a card labelled both
+        "Mexiko, Spanien"; `mano` picked up "Mexiko, Slang" from the *bro* sense
+        while being glossed as *hand*.
+
+        Text is different. A German entry filling in German for an English
+        entry's word is exactly the merge this pass exists to do.
+        """
+        return Gloss(
+            lemma=self.lemma,
+            pos=self.pos,
+            de=self.de or other.de,
+            en=self.en or other.en,
+            de_source=self.de_source if self.de else other.de_source,
+            en_source=self.en_source if self.en else other.en_source,
+            mexicanism=self.mexicanism,
+            region_note=self.region_note,
+            not_spanish=self.not_spanish,
+            corrected_lemma=self.corrected_lemma,
         )
 
 

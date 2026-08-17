@@ -429,3 +429,37 @@ class TestRunShortCircuits:
         glosses, stats = run([])
 
         assert glosses == {} and stats.requests == 0
+
+
+class TestMexicanismInvariant:
+    """The bundle refuses a mexicanism with no note, so the parser must never
+    produce one — the model is asked for a note but is not obliged to comply."""
+
+    def test_a_flag_without_a_note_gets_the_minimum_honest_note(self):
+        built, _ = gloss_from_payload(
+            payload("chido", "ADJ", de="cool", mexicanism=True, region_note=None),
+            task("chido", "ADJ"),
+        )
+
+        assert built.mexicanism is True
+        assert built.region_note == "Mexiko"
+
+    def test_a_supplied_note_is_kept_as_written(self):
+        built, _ = gloss_from_payload(
+            payload(
+                "chido", "ADJ", de="cool", mexicanism=True,
+                region_note="Mexiko, umgangssprachlich",
+            ),
+            task("chido", "ADJ"),
+        )
+
+        assert built.region_note == "Mexiko, umgangssprachlich"
+
+    def test_a_rejected_lemma_is_never_flagged_and_never_noted(self):
+        built, _ = gloss_from_payload(
+            payload("acaeceír", "VERB", mexicanism=True, not_spanish=True),
+            task("acaeceír", "VERB"),
+        )
+
+        assert built.mexicanism is False
+        assert built.region_note is None

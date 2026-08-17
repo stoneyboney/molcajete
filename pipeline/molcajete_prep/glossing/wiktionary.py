@@ -67,6 +67,15 @@ _REGION_DE = {
     "Spain": "Spanien",
 }
 
+# The same regions as Wiktionary writes them in `categories`. Kept separate from
+# the tag table because the strings differ and a sense may carry either, or both.
+_REGION_CATEGORY_DE = {
+    "Mexican Spanish": "Mexiko",
+    "Latin American Spanish": "Lateinamerika",
+    "Peninsular Spanish": "Spanien",
+    "Spain Spanish": "Spanien",
+}
+
 _REGISTER_DE = {
     "colloquial": "umgangssprachlich",
     "informal": "umgangssprachlich",
@@ -166,6 +175,12 @@ def sense_is_mexican(sense: dict, *, entry_is_peninsular_anywhere: bool) -> bool
     tags = _sense_tags(sense)
     categories = set(_category_names(sense))
 
+    # A sense used in Spain *and* Mexico is not a divergence, whatever else it
+    # is labelled. `coche` is "car" in both, and flagging it produced a card
+    # marked "Mexiko, Spanien" — a contradiction on its face.
+    if tags & _PENINSULAR_TAGS or categories & _PENINSULAR_CATEGORIES:
+        return False
+
     if tags & _MEXICO_TAGS or categories & _MEXICO_CATEGORIES:
         return True
     if tags & _LATIN_AMERICA_TAGS or categories & _LATIN_AMERICA_CATEGORIES:
@@ -179,12 +194,22 @@ def region_note(sense: dict) -> str | None:
     Set independently of `mexicanism`: `carro` for "car" is worth marking
     *Lateinamerika* on the card even though it does not earn a card of its own
     under the §5 rules.
+
+    Reads categories as well as tags. Wiktionary is inconsistent about which it
+    uses — plenty of senses carry the category "Mexican Spanish" with no
+    "Mexico" tag — and reading only tags would set `mexicanism` on those while
+    leaving the note empty, which the bundle validator rightly rejects.
     """
     tags = _sense_tags(sense)
+    categories = set(_category_names(sense))
     parts: list[str] = []
 
     for tag in sorted(tags):
         german = _REGION_DE.get(tag)
+        if german and german not in parts:
+            parts.append(german)
+    for category in sorted(categories):
+        german = _REGION_CATEGORY_DE.get(category)
         if german and german not in parts:
             parts.append(german)
     for tag in sorted(tags):
@@ -323,9 +348,17 @@ def index_records(
                 )
                 continue
 
+            # Region labels stay with the sense that carried them. Once an
+            # identity has a gloss, later records may only fill in a language it
+            # is still missing — not relabel the meaning already chosen.
+            merged = (
+                existing.gloss.text_filled_from(tagged)
+                if existing.gloss.has_any_gloss
+                else existing.gloss.merged_with(tagged)
+            )
             index[identity] = WiktionaryHit(
                 lemma=hit.lemma,
-                gloss=existing.gloss.merged_with(tagged),
+                gloss=merged,
                 raw_de=existing.raw_de or hit.raw_de,
                 raw_en=existing.raw_en or hit.raw_en,
                 region_hint=existing.region_hint or hit.region_hint,

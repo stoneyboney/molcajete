@@ -273,6 +273,11 @@ def gloss_from_payload(payload: dict, task: GlossTask) -> tuple[Gloss, bool]:
     # is what makes the model drifting toward definitions visible in the report.
     truncated = german.was_shortened or english.was_shortened
 
+    # A mexicanism with no note is filled in by Gloss itself — the model is
+    # asked for one but is not obliged to comply.
+    mexicanism = bool(payload.get("mexicanism")) and not not_spanish
+    note = _clean(payload.get("region_note")) if not not_spanish else None
+
     return (
         Gloss(
             lemma=task.lemma,
@@ -281,8 +286,8 @@ def gloss_from_payload(payload: dict, task: GlossTask) -> tuple[Gloss, bool]:
             en=en,
             de_source=GlossSource.CLAUDE if de else None,
             en_source=GlossSource.CLAUDE if en else None,
-            mexicanism=bool(payload.get("mexicanism")) and not not_spanish,
-            region_note=_clean(payload.get("region_note")) if not not_spanish else None,
+            mexicanism=mexicanism,
+            region_note=note,
             not_spanish=not_spanish,
             corrected_lemma=_clean(payload.get("corrected_lemma")),
         ),
