@@ -71,3 +71,80 @@
     color: inherit;
   }
 }
+
+/* ---------------------------------------------------------------------------
+   The reader. This is the product; the rest of the app is navigation.
+   --------------------------------------------------------------------------- */
+
+.reader {
+  max-width: 65ch;
+  padding-inline: max(1.5rem, env(safe-area-inset-left), env(safe-area-inset-right));
+  font-family: var(--font-serif);
+  font-size: 19px;
+  line-height: 1.65;
+  hyphens: auto;
+  text-wrap: pretty;
+}
+
+.reader-title {
+  margin-bottom: 1.5rem;
+  font-size: 1.35rem;
+  line-height: 1.3;
+  color: var(--ink-muted);
+  font-variant-caps: small-caps;
+  letter-spacing: 0.04em;
+}
+
+.reader-paragraph {
+  margin: 0 0 1rem;
+  /* Off-screen paragraphs are skipped for layout and paint. `Las noches
+     mejicanas` has a chapter of 1,046 of them; without this the browser lays
+     out all of it on every reflow. `contain-intrinsic-size` is set per
+     paragraph from the estimate in the view model, so the scrollbar stays
+     honest while paragraphs are skipped. Unsupported browsers simply render
+     the lot, which is the behaviour we would have had anyway. */
+  content-visibility: auto;
+}
+
+.reader-end {
+  margin-top: 3rem;
+  text-align: center;
+  font-family: var(--font-sans);
+  font-size: 0.75rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+
+/* Tappable words carry no decoration of their own — marking every known word
+   would turn the page into a diagram. Only `glossOnly` words are marked. */
+.word-marked {
+  text-decoration: underline dotted;
+  text-decoration-color: var(--ink-faint);
+  text-decoration-thickness: from-font;
+  text-underline-offset: 0.22em;
+}
+
+.word:active {
+  background: color-mix(in oklab, var(--accent) 16%, transparent);
+  border-radius: 3px;
+}
+
+/* "Reveal all glosses" (SPEC §13.3): the German sits above the word, ruby
+   style, and only on the words that never got a card. The annotation is always
+   in the DOM when it exists and is revealed by this one attribute, so the
+   toggle costs an attribute flip rather than re-rendering a thousand
+   paragraphs. */
+ruby > rt {
+  display: none;
+}
+
+.reader[data-reveal='true'] ruby > rt {
+  display: revert;
+  font-family: var(--font-sans);
+  font-size: 0.58em;
+  font-weight: 400;
+  line-height: 1.1;
+  color: var(--ink-muted);
+  text-decoration: none;
+}

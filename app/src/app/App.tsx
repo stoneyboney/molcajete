@@ -1,21 +1,25 @@
-/**
- * Placeholder shell. Exists so the deploy path — Actions, HTTPS, the service
- * worker, Add to Home Screen — can be tested on the iPad before any feature
- * is written. Replaced by the router in the next commit.
- */
+import { ChapterList } from '../ui/ChapterList'
+import { Library } from '../ui/Library'
+import { Reader } from '../ui/Reader'
+import { useRoute } from './useRoute'
+
 export function App() {
-  return (
-    <main
-      className="flex min-h-dvh flex-col items-center justify-center gap-2 px-6 text-center"
-      style={{
-        paddingTop: 'env(safe-area-inset-top)',
-        paddingBottom: 'env(safe-area-inset-bottom)',
-      }}
-    >
-      <h1 className="font-serif text-4xl">Molcajete</h1>
-      <p className="text-ink-muted text-sm">
-        Spanisch lesen, mit vorbereitetem Wortschatz.
-      </p>
-    </main>
-  )
+  const route = useRoute()
+
+  switch (route.name) {
+    case 'library':
+      return <Library />
+    case 'chapters':
+      return <ChapterList bookId={route.bookId} />
+    case 'reader':
+      return (
+        <Reader
+          // Remounting on a chapter change is what resets the reveal-all
+          // toggle, which SPEC §13.3 requires not to persist across chapters.
+          key={`${route.bookId}/${route.chapterIndex}`}
+          bookId={route.bookId}
+          chapterIndex={route.chapterIndex}
+        />
+      )
+  }
 }
