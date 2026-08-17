@@ -129,6 +129,29 @@ Code, comments, commit messages, and this documentation are in English.
 
 ## Current phase
 
+**Phase 2 — Glosses. Code complete; the fallback's first real run is pending.**
+
+The Wiktionary half runs and is cached. The model half was written against the
+Claude Batches API and could not be run — no credentials — so a local provider
+was added to unblock it.
+
+Three things settled while doing that:
+
+1. **The gloss fallback is behind a port.** `glossing/provider.py` defines
+   `GlossProvider`; `claude.py` and `ollama.py` implement it; `--gloss-provider`
+   selects one. `pipeline.gloss_lexicon` imports neither. Adding a third is a
+   module and a line in `build_provider`. Claude remains the default per SPEC
+   §11.2; `--gloss-provider ollama` needs no key and no network.
+2. **`--de-wiktionary context-only` is the default.** German Wiktionary glosses
+   `lunes` as "der erste Wochentag" — short enough to pass a length filter, and
+   a riddle on a card. Fitting a card and teaching the word are different tests,
+   and only the model has the book's sentence. `verbatim` still available.
+3. **The cache is keyed by provider and model, but the Wiktionary rows are
+   not.** Those rows record what the dictionaries said and every provider reads
+   them. Scoping them per provider would undo the warm-rebuild fix from 6ff7dce
+   — 3.1 GB of dumps re-streamed on the first `--gloss-provider ollama` build.
+   There is a test pinning this; do not "tidy" it.
+
 **Phase 1 — Prep pipeline skeleton. Complete.**
 
 `pipeline/build_bundle.py` turns a DRM-free Spanish EPUB into a validated

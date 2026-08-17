@@ -36,14 +36,36 @@ English dump covers hundreds of languages and Spanish is filtered out of it as
 it streams — about a minute, once. The per-language files kaikki also offers are
 marked deprecated there and are not used.
 
-### API key (needed for the Claude gloss fallback)
+### A gloss provider
+
+Wiktionary cannot get near the SPEC §12 target of a German gloss on 95% of the
+teach set — German Wiktionary holds about 6,600 Spanish entries against a book's
+nine thousand lemmas — so something has to write the rest. There are two
+options, chosen with `--gloss-provider`.
+
+**Claude** (`--gloss-provider claude`, the default) uses the Message Batches API:
 
 ```bash
 export ANTHROPIC_API_KEY=sk-ant-...
 ```
 
-Read from the environment only; nothing writes it to disk. Builds that pass
-`--gloss-offline` or `--no-gloss` never need it.
+Read from the environment only; nothing writes it to disk.
+
+**Ollama** (`--gloss-provider ollama`) runs a model on this machine. No key, no
+account, no network beyond the loopback interface:
+
+```bash
+brew install ollama
+brew services start ollama
+ollama pull gemma3:12b
+```
+
+`gemma3:12b` is the default and is about 8 GB. Google's multilingual line is
+strong at translation and writes idiomatic German, which is what a gloss with
+the right article needs. `--gloss-model qwen3:8b` is faster and smaller;
+`--gloss-model mistral-small3.2:24b` knows more and needs 14 GB.
+
+Builds that pass `--gloss-offline` or `--no-gloss` need neither provider.
 
 ## Running
 
@@ -61,17 +83,36 @@ Useful flags:
 | `--split-on-heading` | Split each spine document on `<h1>`–`<h6>`. Use when an edition packs several chapters into one file. |
 | `--known path/to/known.json` | Treat these lemmas as already known (Phase 5; defaults to empty) |
 | `--report-only` | Print the report to stdout, write nothing |
-| `--gloss-offline` | Wiktionary and the cache only. No API calls, no spend. |
+| `--gloss-offline` | Wiktionary and the cache only. No model, no spend. |
 | `--no-gloss` | Skip glossing entirely — **also changes what is taught**, see below |
-| `--gloss-limit N` | Send at most N lemmas to Claude, most-used first |
+| `--gloss-provider ollama` | Gloss with a local model instead of the Claude API |
+| `--gloss-model NAME` | Override the provider's model (`claude-haiku-4-5`, `qwen3:8b`, …) |
+| `--gloss-limit N` | Send at most N lemmas to the model, most-used first |
 | `--regloss` | Ignore cached glosses and fetch them again |
-| `--de-wiktionary context-only` | Let Claude write every German gloss instead of taking short ones from German Wiktionary verbatim |
+| `--de-wiktionary verbatim` | Take short German Wiktionary glosses as they stand, instead of demoting them to context |
+
+Local-model flags — `--gloss-concurrency` (default 2), `--gloss-retries`
+(default 1), `--gloss-chunk` (default 1 locally, 25 for Claude) — are described
+under **Running a local model** below.
 
 ## Glossing
 
-Three sources, cheapest first: the shared cache, then English Wiktionary
-(English glosses and the region labels), then German Wiktionary (thin — about
-6,600 Spanish entries), then Claude for whatever still has no German gloss.
+Sources, cheapest first: the shared cache, then English Wiktionary (English
+glosses and the region labels), then German Wiktionary (thin — about 6,600
+Spanish entries), then whichever provider is selected, for everything that still
+has no German gloss.
+
+### German Wiktionary is context by default
+
+`--de-wiktionary` decides whether a *short* German Wiktionary gloss is used as
+it stands. It defaults to `context-only`, meaning it is not: every German gloss
+is written by the model, with the Wiktionary text passed along as a hint.
+
+The reason is that fitting on a card and teaching the word are different tests.
+German Wiktionary glosses `lunes` as "der erste Wochentag" — four words, fits
+fine, and reads like a riddle. Length is the only thing a filter can measure;
+whether the text names the thing is not. Only the model has the book's own
+sentence in front of it. `--de-wiktionary verbatim` restores the old behaviour.
 
 **Glossing runs before classification, not after.** `mexicanism` is one of the
 three SPEC §5 teach rules, so the flag has to exist before the rules are
@@ -79,24 +120,83 @@ applied. The practical consequence: `--no-gloss` does not merely omit glosses,
 it changes which lemmas are taught, because that rule can never fire. The
 report says which mode produced it.
 
-The gloss cache at `pipeline/cache/glosses.sqlite3` is keyed on `(lemma, pos)`
-and shared across books, which is what makes the second book nearly free. It is
-derived data — deleting it costs a rebuild, nothing more.
+### The cache
 
-One trade it makes deliberately: a Claude gloss was disambiguated against one
+The gloss cache at `pipeline/cache/glosses.sqlite3` is keyed on
+`(lemma, pos, provider, model)` and shared across books, which is what makes the
+second book nearly free. It is derived data — deleting it costs a rebuild,
+nothing more.
+
+The provider is part of the key because a gloss from Sonnet and one from a 12B
+model on this laptop are two different claims about the same word. The
+Wiktionary rows deliberately are *not* scoped that way: they record what the
+dictionaries said, which no model wrote, so every provider reads them. That is
+what keeps a rebuild warm — the empty rows recording "we looked and found
+nothing" are the reason a second build does not re-stream 3.1 GB of dumps, and
+scoping them per provider would have undone that the moment anyone switched.
+
+One trade it makes deliberately: a model's gloss was disambiguated against one
 book's example sentence, so reusing it in a book that uses a different sense of
 the word is wrong. Each row records the sentence and the book that produced it,
 the report counts cache hits, and `--regloss` forces a fresh pass.
 
+An existing pre-provider cache is migrated in place on first open.
+
+## Running a local model
+
+```bash
+uv run python build_bundle.py sources/noches.epub --gloss-provider ollama
+```
+
+A local model follows instructions less reliably than a hosted one, and the
+local path is written for that rather than hoping otherwise:
+
+- **Answers are checked, not trusted.** The echoed lemma must match what was
+  asked, and the one-to-three-words rule is re-derived in Python rather than
+  believed. A gloss that breaks it is rejected.
+- **One stricter retry, then a miss.** A rejected answer is sent back with its
+  own text quoted and the rule restated (`--gloss-retries`). If it still fails,
+  the lemma is recorded as ungloszed and counted in the report. Nothing guesses,
+  and nothing crashes the build.
+- **One lemma per request** (`--gloss-chunk`). Claude batches 25 because a
+  cached prompt prefix is worth amortizing; locally there is no bill, and a
+  12B model asked for 25 aligned objects starts merging and dropping them.
+- **Two requests in flight** (`--gloss-concurrency`). One already saturates the
+  GPU and more is measurably *slower* — gemma3:12b on an M4 Pro/24 GB does 20
+  lemmas in 81 s at concurrency 2, 84 s at 4, 96 s at 6.
+
+### How long a book takes
+
+About **0.25 lemmas per second**, so a nine-thousand-lemma novel is roughly ten
+hours of wall clock. That is not a problem to fix so much as a fact to plan
+around: start it and go to bed. The gloss cache means you pay it once across all
+books, and `--gloss-limit` is there if you want the commonest few hundred lemmas
+glossed now and the tail later.
+
+An unreachable Ollama server stops the build rather than producing a bundle with
+no glosses in it. Everything else is a number in the report.
+
 ### Trying it on 200 lemmas first
 
 ```bash
-uv run python gloss_trial.py sources/noches.epub --out ../bundles/gloss-trial.txt
+uv run python gloss_trial.py sources/noches.epub \
+    --provider ollama --model gemma3:12b \
+    --gold gold/mexicanisms.txt \
+    --out ../bundles/gloss-trial-ollama.txt
 ```
 
-Glosses a stratified sample at two settings and writes both answers out, for
-roughly ten cents. Writes no bundle and never touches the shared cache. Worth
-running before the first full book, and again after any change to the prompt.
+Glosses a stratified sample and writes the answers out. Writes no bundle and
+never touches the shared cache. Worth running before the first full book, and
+again after any change to the prompt. Pass `--model` more than once to compare
+local models side by side.
+
+`--gold` scores mexicanism recall against a list of lemmas already known to be
+Mexican — `pipeline/gold/mexicanisms.txt`, one lemma per line. It is the only
+measurement in the trial that is not self-reported: everything else says how
+confidently the model answered, and this says whether it was right about the
+flag SPEC §5 teaches from. Scoring covers only the gold lemmas the book actually
+contains, and those are force-added to the sample; the rest are listed as absent
+rather than counted as misses.
 
 ## Tests
 
