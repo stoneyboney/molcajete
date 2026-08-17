@@ -553,3 +553,108 @@ class TestSchemaGuards:
 
         with pytest.raises(BundleValidationError, match="empty"):
             validate_bundle(bundle)
+
+
+class TestWarmRebuilds:
+    """Caching only the hits meant a rebuild re-streamed both dumps to
+    rediscover the same misses — a warm build cost as much as a cold one."""
+
+    def test_a_lemma_wiktionary_has_nothing_for_is_still_cached(self, extracts, cache):
+        tokens = [[[word("inexistente")]]]
+
+        gloss_lexicon(
+            build_lexicon(tokens),
+            tokens,
+            book_id="test",
+            options=GlossingOptions(use_claude=False, extract_dir=extracts),
+            cache=cache,
+            now=NOW,
+        )
+
+        stored = cache.get("inexistente", "NOUN")
+        assert stored is not None
+        assert stored.de is None and stored.en is None
+
+    def test_a_second_offline_build_reads_everything_from_cache(self, extracts, cache):
+        tokens = [[[word("libro"), word("inexistente")]]]
+        options = GlossingOptions(use_claude=False, extract_dir=extracts)
+
+        gloss_lexicon(
+            build_lexicon(tokens), tokens, book_id="a", options=options,
+            cache=cache, now=NOW,
+        )
+        second = gloss_lexicon(
+            build_lexicon(tokens), tokens, book_id="b", options=options,
+            cache=cache, now=NOW,
+        )
+
+        assert second.cache_hits == 2
+
+    def test_an_empty_cached_gloss_still_goes_to_claude_later(self, extracts, cache):
+        """The correctness half: caching a miss must not permanently poison the
+        book against being glossed by a later online build."""
+        tokens = [[[word("inexistente")]]]
+        gloss_lexicon(
+            build_lexicon(tokens), tokens, book_id="a",
+            options=GlossingOptions(use_claude=False, extract_dir=extracts),
+            cache=cache, now=NOW,
+        )
+
+        client = fake_client({("inexistente", "NOUN"): answer(de="x", en="y")})
+        online = gloss_lexicon(
+            build_lexicon(tokens), tokens, book_id="b",
+            options=GlossingOptions(extract_dir=extracts),
+            cache=cache, now=NOW, client=client,
+        )
+
+        assert online.sent_to_claude == 1
+        assert next(iter(online.glosses.values())).de == "x"
+
+    def test_a_lemma_claude_already_answered_is_not_sent_again(self, extracts, cache):
+        tokens = [[[word("caballo")]]]
+        client = fake_client({("caballo", "NOUN"): answer(de="das Pferd", en="horse")})
+        options = GlossingOptions(extract_dir=extracts)
+
+        gloss_lexicon(
+            build_lexicon(tokens), tokens, book_id="a", options=options,
+            cache=cache, now=NOW, client=client,
+        )
+        second = gloss_lexicon(
+            build_lexicon(tokens), tokens, book_id="b", options=options,
+            cache=cache, now=NOW, client=client,
+        )
+
+        assert second.sent_to_claude == 0
+
+    def test_a_lemma_claude_refused_is_not_paid_for_twice(self, extracts, cache):
+        """Re-sending would buy the same "not a word" on every rebuild."""
+        tokens = [[[word("acaeceír", "VERB")]]]
+        client = fake_client(
+            {("acaeceír", "VERB"): answer(not_spanish=True, corrected_lemma="acaecer")}
+        )
+        options = GlossingOptions(extract_dir=extracts)
+
+        gloss_lexicon(
+            build_lexicon(tokens), tokens, book_id="a", options=options,
+            cache=cache, now=NOW, client=client,
+        )
+        second = gloss_lexicon(
+            build_lexicon(tokens), tokens, book_id="b", options=options,
+            cache=cache, now=NOW, client=client,
+        )
+
+        assert second.sent_to_claude == 0
+
+    def test_a_gloss_missing_only_german_is_still_sent(self, extracts, cache):
+        """English Wiktionary covers far more than German does, so this is the
+        common case — most of the book, in fact."""
+        tokens = [[[word("madriguera")]]]
+        client = fake_client({("madriguera", "NOUN"): answer(de="der Bau", en="burrow")})
+
+        result = gloss_lexicon(
+            build_lexicon(tokens), tokens, book_id="a",
+            options=GlossingOptions(extract_dir=extracts),
+            cache=cache, now=NOW, client=client,
+        )
+
+        assert result.sent_to_claude == 1

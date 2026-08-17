@@ -91,6 +91,24 @@ class GlossingResult:
         return {key: gloss.mexicanism for key, gloss in self.glosses.items()}
 
 
+def _wants_claude(gloss: Gloss | None) -> bool:
+    """Whether this lemma still has something to gain from the model.
+
+    Complete in both languages, or already answered by Claude — including a
+    refusal — means there is nothing more to ask. Re-sending a lemma Claude has
+    already declined would pay for the same "not a word" on every rebuild.
+    """
+    if gloss is None:
+        return True
+    if gloss.not_spanish:
+        return False
+    if gloss.has_german and gloss.has_english:
+        return False
+    return not (
+        gloss.de_source is GlossSource.CLAUDE or gloss.en_source is GlossSource.CLAUDE
+    )
+
+
 def _require(path: Path, what: str) -> None:
     if not path.exists():
         raise SourceUnavailableError(
@@ -203,14 +221,13 @@ def gloss_lexicon(
         # A lemma goes to Claude when either language is still empty. English is
         # secondary, but the same request answers both, so a lemma already in a
         # chunk costs nothing extra to complete.
+        #
+        # Computed over every identity, not just the ones the cache missed. A
+        # gloss cached by an earlier `--gloss-offline` build has no German and
+        # must still be sent; scoping this to cache misses would mean an offline
+        # build permanently poisoned the book against ever being glossed.
         needs = [
-            identity
-            for identity in outstanding
-            if not (
-                by_identity.get(identity)
-                and by_identity[identity].has_german
-                and by_identity[identity].has_english
-            )
+            identity for identity in identities if _wants_claude(by_identity.get(identity))
         ]
 
         # Most-used words first, so a --gloss-limit spends where it pays.
@@ -251,14 +268,22 @@ def gloss_lexicon(
                 book_id=book_id,
             )
 
-        # Everything Wiktionary alone settled is worth caching too: the next book
-        # then skips the 22.9 GB stream for those lemmas entirely.
-        wiktionary_only = [
-            by_identity[identity]
-            for identity in outstanding
-            if identity in by_identity and identity not in (needs if options.use_claude else [])
-        ]
-        cache.put_many(wiktionary_only, now=now, book_id=book_id)
+        # Everything the Wiktionary pass settled is cached, *including the
+        # lemmas it found nothing for*. Caching only the hits meant a rebuild
+        # re-streamed both dumps to rediscover the same three thousand misses —
+        # a warm build cost the same 68 seconds as a cold one. An empty row is
+        # the answer "we looked"; `--regloss` is how you ask again after kaikki
+        # refreshes.
+        answered_by_claude = set(needs) if options.use_claude else set()
+        cache.put_many(
+            [
+                by_identity.get(identity) or Gloss(lemma=identity[0], pos=identity[1])
+                for identity in outstanding
+                if identity not in answered_by_claude
+            ],
+            now=now,
+            book_id=book_id,
+        )
 
         for identity, gloss in by_identity.items():
             for key in keys_by_identity[identity]:
