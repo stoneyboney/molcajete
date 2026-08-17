@@ -9,6 +9,7 @@ from datetime import datetime
 from pathlib import Path
 
 from molcajete_prep.bundle import build_bundle, write_bundle
+from molcajete_prep.claude_status import print_batch_status
 from molcajete_prep.classify import ClassificationOptions
 from molcajete_prep.glossing.pipeline import CONTEXT_ONLY, VERBATIM, GlossingOptions
 from molcajete_prep.report import render_report
@@ -16,16 +17,6 @@ from molcajete_prep.report import render_report
 BUNDLE_SUFFIX = ".molcajete.json"
 REPORT_SUFFIX = ".report.txt"
 
-
-def _print_batch_status(batch: object) -> None:
-    """Keep a long batch from looking like a hang. Batches can run for an hour."""
-    counts = getattr(batch, "request_counts", None)
-    processing = getattr(counts, "processing", "?")
-    print(
-        f"  glossing: batch {getattr(batch, 'processing_status', '?')}, "
-        f"{processing} requests still processing",
-        file=sys.stderr,
-    )
 
 
 def load_known_lemmas(path: str | Path | None) -> frozenset[str]:
@@ -157,7 +148,7 @@ def main(argv: list[str] | None = None) -> int:
         keep_boilerplate=args.keep_boilerplate,
         gloss=not args.no_gloss,
         gloss_options=gloss_options,
-        on_status=_print_batch_status,
+        on_status=print_batch_status,
     )
 
     if args.report_only:
