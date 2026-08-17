@@ -133,42 +133,70 @@ def _clean_unit(unit: str) -> str:
     return _WHITESPACE.sub(" ", unit).strip(" .:-—– ")
 
 
-def normalize_gloss(text: str | None) -> str | None:
-    """Reduce dictionary prose to a card-sized gloss, or None if nothing survives.
+@dataclass(frozen=True)
+class NormalizedGloss:
+    """Card text, plus how much violence was needed to get it there.
 
-    Truncating rather than rejecting is deliberate: a Wiktionary entry whose
-    first alternative is usable is worth keeping even when the four that follow
-    are not. Whether the result was *shortened* is a separate question, which
-    `is_card_sized` answers on the original text — the report counts those so a
-    silent quality drop stays visible.
+    The two flags separate the two ways dictionary text overruns a card, because
+    they deserve opposite treatment:
+
+    `trimmed` — there were more alternatives than a card holds, but each was
+    short. "burrow, den, sett, warren" becomes "burrow, den, sett" and loses
+    nothing that matters. Perfectly good card text.
+
+    `clipped` — every alternative was a phrase, so a prefix of the first was
+    kept. "unterirdischer Unterschlupf eines Tieres" becomes "unterirdischer
+    Unterschlupf eines", which is not a translation but the wreckage of a
+    definition. Usable only as a last resort.
+    """
+
+    text: str | None
+    trimmed: bool = False
+    clipped: bool = False
+
+    @property
+    def is_translation(self) -> bool:
+        """Whether this reads as a gloss rather than as a mangled definition."""
+        return bool(self.text) and not self.clipped
+
+    @property
+    def was_shortened(self) -> bool:
+        return self.trimmed or self.clipped
+
+
+def normalize_gloss(text: str | None) -> NormalizedGloss:
+    """Reduce dictionary prose to card text.
+
+    Both halves of the one-to-three-words rule are enforced: at most three
+    alternatives, and at most three words in each. Capping only the count would
+    let "Bau, Höhle, unterirdischer Unterschlupf eines Tieres" through intact,
+    which is a definition wearing a gloss's punctuation.
     """
     if not text:
-        return None
+        return NormalizedGloss(None)
 
-    units: list[str] = []
+    seen: list[str] = []
     for raw in _SEPARATORS.split(_ASIDE.sub(" ", text)):
         unit = _clean_unit(raw)
-        if not unit or unit in units:
-            continue
-        units.append(unit)
-        if len(units) == MAX_UNITS:
-            break
+        if unit and unit not in seen:
+            seen.append(unit)
 
-    return ", ".join(units) or None
+    short = [unit for unit in seen if len(unit.split()) <= MAX_WORDS_PER_UNIT]
+    if short:
+        return NormalizedGloss(
+            ", ".join(short[:MAX_UNITS]),
+            trimmed=len(short) > MAX_UNITS or len(short) != len(seen),
+        )
+
+    # Every alternative is a phrase. Keep a bounded prefix of the first rather
+    # than nothing — a caller with no further fallback would rather have this —
+    # but say so, because a caller that can ask Claude instead should.
+    if seen:
+        clipped = " ".join(seen[0].split()[:MAX_WORDS_PER_UNIT])
+        return NormalizedGloss(clipped or None, clipped=bool(clipped))
+    return NormalizedGloss(None)
 
 
-def is_card_sized(text: str | None) -> bool:
-    """Whether `text` already meets the card bar without being cut down.
-
-    This is the gate that decides whether a German Wiktionary gloss is used
-    verbatim or handed to Claude to condense. "Buch" passes; "Bau, Höhle,
-    unterirdischer Unterschlupf eines Tieres" does not.
-    """
-    if not text:
-        return False
-
-    units = [_clean_unit(u) for u in _SEPARATORS.split(_ASIDE.sub(" ", text))]
-    units = [u for u in units if u]
-    if not units or len(units) > MAX_UNITS:
-        return False
-    return all(len(unit.split()) <= MAX_WORDS_PER_UNIT for unit in units)
+def gloss_text(text: str | None) -> str | None:
+    """`normalize_gloss` when only the text matters."""
+    return normalize_gloss(text).text

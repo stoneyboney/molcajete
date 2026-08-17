@@ -8,7 +8,7 @@ from molcajete_prep.glossing.cache import GlossCache
 from molcajete_prep.glossing.models import (
     Gloss,
     GlossSource,
-    is_card_sized,
+    gloss_text,
     normalize_gloss,
     upos_candidates,
 )
@@ -213,44 +213,69 @@ class TestGlossNormalization:
         ],
     )
     def test_dictionary_prose_becomes_card_text(self, raw, expected):
-        assert normalize_gloss(raw) == expected
+        assert gloss_text(raw) == expected
 
     def test_only_the_first_three_alternatives_survive(self):
-        assert normalize_gloss("a, b, c, d, e") == "a, b, c"
+        assert gloss_text("a, b, c, d, e") == "a, b, c"
 
     def test_duplicate_alternatives_are_dropped(self):
-        assert normalize_gloss("Bau, Bau, Höhle") == "Bau, Höhle"
+        assert gloss_text("Bau, Bau, Höhle") == "Bau, Höhle"
 
     @pytest.mark.parametrize("empty", [None, "", "   ", "()", "..."])
     def test_nothing_worth_showing_becomes_none(self, empty):
-        assert normalize_gloss(empty) is None
+        assert gloss_text(empty) is None
 
 
-class TestCardSizing:
-    """`is_card_sized` decides whether a German Wiktionary gloss is used as it
-    stands or handed to Claude to condense."""
+class TestTranslationVersusDefinition:
+    """The gate that decides whether Wiktionary's words are used as they stand
+    or handed to Claude to condense."""
 
     @pytest.mark.parametrize(
         "text", ["Buch", "der Bau", "Bau, Höhle", "cool, super, klasse", "die kleine Hütte"]
     )
     def test_short_glosses_are_used_verbatim(self, text):
-        assert is_card_sized(text) is True
+        assert normalize_gloss(text).is_translation is True
+
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "burrow, den, sett, warren",
+            "to take, catch, hold, to get, to seize",
+            "Bau, Höhle, unterirdischer Unterschlupf eines Tieres",
+            "have; forms the perfect aspect",
+        ],
+    )
+    def test_a_surplus_of_short_alternatives_is_trimmed_and_still_usable(self, text):
+        """Dropping the fourth synonym loses nothing a card needed."""
+        result = normalize_gloss(text)
+
+        assert result.is_translation is True
+        assert result.trimmed is True
+        assert result.clipped is False
 
     @pytest.mark.parametrize(
         "text",
         [
             "unterirdischer Unterschlupf eines Tieres",
-            "Bau, Höhle, unterirdischer Unterschlupf eines Tieres",
-            "a, b, c, d",
-            "",
-            None,
+            "A reference work listing words from one or more languages",
         ],
     )
-    def test_definitional_prose_goes_to_claude(self, text):
-        assert is_card_sized(text) is False
+    def test_a_lone_definition_is_clipped_and_therefore_rejected(self, text):
+        """Cutting a definition to three words yields wreckage, not a gloss."""
+        result = normalize_gloss(text)
+
+        assert result.clipped is True
+        assert result.is_translation is False
+
+    @pytest.mark.parametrize("text", ["", None])
+    def test_nothing_at_all_is_not_a_translation(self, text):
+        assert normalize_gloss(text).is_translation is False
 
     def test_a_parenthetical_does_not_count_against_the_length(self):
-        assert is_card_sized("(Zoologie) Bau") is True
+        assert normalize_gloss("(Zoologie) Bau").is_translation is True
+
+    def test_untouched_text_is_not_reported_as_shortened(self):
+        assert normalize_gloss("der Bau").was_shortened is False
 
 
 class TestPosMapping:
