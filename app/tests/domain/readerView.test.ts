@@ -125,8 +125,14 @@ describe('reveal-all glosses', () => {
 
   it('leaves a marked word with no German gloss unrevealed', () => {
     // The normal state for a Phase 1 bundle, and for any lemma the provider
-    // refused. It must not render an empty annotation.
-    const view = buildParagraphView(paragraph(0, 1), new Set(['m0037']), lexiconMap())
+    // refused. Constructed rather than taken from the fixture, which is now
+    // glossed end to end. It must not render an empty annotation.
+    const lexicon = lexiconMap()
+    const huizach = lexicon.get('m0037')
+    expect(huizach?.de).toBeTruthy()
+    delete lexicon.get('m0037')!.de
+
+    const view = buildParagraphView(paragraph(0, 1), new Set(['m0037']), lexicon)
     expect(wordsOf(view).every((run) => run.reveal === null)).toBe(true)
     expect(wordsOf(view).some((run) => run.marked)).toBe(true)
   })

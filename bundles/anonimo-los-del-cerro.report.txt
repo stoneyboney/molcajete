@@ -1,6 +1,6 @@
 Molcajete bundle report
 Book: Los del cerro — Anónimo (anonimo-los-del-cerro)
-Built: 2026-08-16T22:37:39  ·  schemaVersion 1  ·  Bundle: 0.0 MB
+Built: 2026-08-17T15:19:07  ·  schemaVersion 1  ·  Bundle: 0.0 MB
 Word tokens: 111  ·  Chapters: 3
 
 LEMMAS
@@ -35,6 +35,61 @@ TOP 20 TEACH LEMMAS BY BOOK COUNT
    18  m0005  al                 ADP    bookCount     1   zipf 6.74   first ch. 1
    19  m0006  alcanzar           VERB   bookCount     1   zipf 4.67   first ch. 1
    20  m0007  aquel              DET    bookCount     1   zipf 4.87   first ch. 1
+
+GLOSSES
+  Teach-set lemmas                  69
+  With German gloss                 69   (100.0%)   <- SPEC §12 target: >95%  MET
+  With English gloss                69   (100.0%)
+
+  German gloss source:
+    de-wiktionary                         24
+    ollama                                45
+    none                                   0
+  English gloss source:
+    en-wiktionary                         67
+    ollama                                 2
+    none                                   0
+
+  Mexicanism flagged                 1   (wiktionary 0 · model 1)
+  Served from the gloss cache       66   (of the whole lexicon, not just the teach set)
+  Sent to the model                 48   (ollama gemma3:12b)
+  Rejected as not Spanish            0   of 72 lexicon lemmas
+    (es_core_news_sm invents these. This is the measurement that would justify
+     comparing against es_core_news_md — see CLAUDE.md.)
+  Ran locally, no cost            free   (3.6 min, 21 output tok/s)
+
+SAMPLE OF 30 GLOSSES
+  (commonest first, then flagged mexicanisms, then a random draw)
+  el                 DET    MW   DE der                        EN the
+  caballo            NOUN   WW   DE ein Huftier: Pferd         EN horse
+  de                 ADP    WW   DE von                        EN of, 's
+  del                ADP    MW   DE von                        EN of the, from the
+  fusil              NOUN   MW   DE das Gewehr                 EN rifle
+  jacal              NOUN   MW * DE das Lehmhaus               EN jacal  [Mexiko]
+  sierra             NOUN   MW   DE das Gebirge                EN saw
+  su                 DET    MW   DE sein                       EN approximately
+  y                  CCONJ  WW   DE und                        EN and
+  camino             NOUN   MW   DE der Weg                    EN way, route
+  soldado            NOUN   MW   DE der Soldat                 EN soldier
+  abandonado         ADJ    MW   DE verlassen, aufgegeben      EN abandoned
+  agarrar            VERB   MM   DE greifen, packen            EN grab, take hold of
+  arriba             ADV    MW   DE oben, höher                EN above, over
+  arroyo             NOUN   MW   DE der Bach                   EN stream, brook, creek
+  beber              VERB   MW   DE trinken                    EN drink
+  cada               DET    MW   DE jede, r, jedes             EN each, every
+  día                NOUN   WW   DE der Tag                    EN day
+  limpiar            VERB   MW   DE putzen                     EN clean
+  mientras           SCONJ  WW   DE während                    EN while, whilst, as
+  montar             VERB   MW   DE aufsteigen, besteigen      EN mount
+  otro               DET    MW   DE ein anderer, ein weiteres  EN other, another
+  paso               NOUN   MW   DE der Schritt                EN step, footstep
+  piedra             NOUN   WW   DE der Stein, der Felsbrocken EN stone
+  poco               ADV    WW   DE wenig                      EN little
+  por                ADP    MW   DE wegen, entlang             EN by
+  sonrisa            NOUN   MW   DE das Lächeln                EN smile
+  volver             VERB   MW   DE zurückkehren, wiederkommen EN return, revert, get back
+  ya                 ADV    WW   DE schon                      EN now, right now, anymore
+  Source column: W wiktionary, M model, - none. * mexicanism.
 
 DIAGNOSTICS
   Chapters whose teach set exceeds the 18-card cap: 3 of 3

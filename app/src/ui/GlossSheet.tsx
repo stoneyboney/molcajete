@@ -22,7 +22,9 @@ export function GlossSheet({
   }, [onDismiss])
 
   return (
-    <div className="fixed inset-0 z-20 flex flex-col justify-end">
+    // Above the progress bar: the scrim covers the page, and a bright line
+    // floating over it reads as a rendering fault rather than as progress.
+    <div className="fixed inset-0 z-40 flex flex-col justify-end">
       <button
         type="button"
         aria-label="Schließen"
@@ -50,7 +52,13 @@ export function GlossSheet({
         </div>
 
         {view.regionNote && (
-          <p className="text-accent mt-1 text-xs">{view.regionNote}</p>
+          <p
+            className={`mt-1 text-xs ${
+              view.mexicanism ? 'text-accent' : 'text-ink-faint'
+            }`}
+          >
+            {view.regionNote}
+          </p>
         )}
 
         {view.de ? (

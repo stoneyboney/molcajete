@@ -19,8 +19,17 @@ export interface GlossView {
   en: string | null
   /** The sentence from this book that the gloss was disambiguated against. */
   example: string | null
-  /** Non-null only when the entry is flagged Mexican; the two travel together. */
+  /**
+   * Where and how the word is used, when the pipeline said anything.
+   *
+   * Not gated on `mexicanism`. The pipeline requires a note whenever the flag
+   * is set, but not the reverse, and the fixture has a real case of the
+   * reverse: `huizach` is annotated "Mexiko, ländlich" with the flag false.
+   * That note is worth reading whatever the flag says.
+   */
   regionNote: string | null
+  /** Flagged as Mexican usage — one of the three SPEC §5 reasons to teach it. */
+  mexicanism: boolean
 }
 
 export function buildGlossView(
@@ -35,6 +44,7 @@ export function buildGlossView(
     de: entry.de ?? null,
     en: entry.en ?? null,
     example: entry.example?.es ?? null,
-    regionNote: entry.mexicanism ? (entry.regionNote ?? null) : null,
+    regionNote: entry.regionNote ?? null,
+    mexicanism: entry.mexicanism,
   }
 }

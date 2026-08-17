@@ -114,12 +114,20 @@ describe('buildGlossView', () => {
     expect(view?.example).toBe('levantando polvo entre los huizaches.')
   })
 
-  it('shows a region note only for a mexicanism', () => {
-    expect(buildGlossView('m1', entry({ regionNote: 'MX' }))?.regionNote).toBeNull()
-    expect(
-      buildGlossView('m1', entry({ mexicanism: true, regionNote: 'MX, coloquial' }))
-        ?.regionNote,
-    ).toBe('MX, coloquial')
+  it('passes a region note through whether or not the flag is set', () => {
+    // The pipeline requires a note whenever `mexicanism` is true, but not the
+    // reverse — the fixture's `huizach` is annotated "Mexiko, ländlich" with
+    // the flag false. Gating the note on the flag would drop that.
+    const unflagged = buildGlossView('m1', entry({ regionNote: 'Mexiko, ländlich' }))
+    expect(unflagged?.regionNote).toBe('Mexiko, ländlich')
+    expect(unflagged?.mexicanism).toBe(false)
+
+    const flagged = buildGlossView(
+      'm1',
+      entry({ mexicanism: true, regionNote: 'MX, coloquial' }),
+    )
+    expect(flagged?.regionNote).toBe('MX, coloquial')
+    expect(flagged?.mexicanism).toBe(true)
   })
 
   it('returns null for a key the lexicon slice does not hold', () => {
