@@ -149,6 +149,11 @@ describe('routes', () => {
       bookId: 'anonimo-los-del-cerro',
       chapterIndex: 2,
     }],
+    ['#/book/anonimo-los-del-cerro/ch/2/lernen', {
+      name: 'session',
+      bookId: 'anonimo-los-del-cerro',
+      chapterIndex: 2,
+    }],
   ]
 
   it.each(cases)('parses %s', (hash, route) => {
@@ -168,6 +173,8 @@ describe('routes', () => {
       '#/book/x/ch/nope',
       '#/book/x/ch/-1',
       '#/book/x/chapter/1',
+      '#/book/x/ch/1/lesen',
+      '#/book/x/ch/1/lernen/2',
       '#/nonsense',
     ]) {
       expect(parseRoute(hash)).toEqual({ name: 'library' })

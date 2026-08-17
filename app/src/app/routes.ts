@@ -11,6 +11,13 @@ export type Route =
   | { name: 'library' }
   | { name: 'chapters'; bookId: string }
   | { name: 'reader'; bookId: string; chapterIndex: number }
+  /**
+   * The teaching session. Deliberately carries no segment number: which words
+   * are still to be taught depends on what you know right now, so the screen
+   * works it out on arrival. A stale deep link therefore opens the right
+   * session rather than an empty one.
+   */
+  | { name: 'session'; bookId: string; chapterIndex: number }
 
 export const LIBRARY: Route = { name: 'library' }
 
@@ -24,10 +31,13 @@ export function parseRoute(hash: string): Route {
   if (parts[0] === 'book' && parts[1]) {
     const bookId = parts[1]
     if (parts.length === 2) return { name: 'chapters', bookId }
-    if (parts.length === 4 && parts[2] === 'ch') {
+    if (parts.length >= 4 && parts[2] === 'ch') {
       const chapterIndex = Number(parts[3])
       if (Number.isInteger(chapterIndex) && chapterIndex >= 0) {
-        return { name: 'reader', bookId, chapterIndex }
+        if (parts.length === 4) return { name: 'reader', bookId, chapterIndex }
+        if (parts.length === 5 && parts[4] === 'lernen') {
+          return { name: 'session', bookId, chapterIndex }
+        }
       }
     }
   }
@@ -43,5 +53,7 @@ export function routeToHash(route: Route): string {
       return `#/book/${encodeURIComponent(route.bookId)}`
     case 'reader':
       return `#/book/${encodeURIComponent(route.bookId)}/ch/${route.chapterIndex}`
+    case 'session':
+      return `#/book/${encodeURIComponent(route.bookId)}/ch/${route.chapterIndex}/lernen`
   }
 }
