@@ -54,13 +54,21 @@ button picks it up from there.
 ```
 src/domain/      Pure. No React, no DOM, no Dexie. Heavily tested.
   types.ts       The bundle format as the reader decodes it
+  lemma.ts       LemmaKey (book-scoped) vs LemmaId (global). Read this first.
+  teachSet.ts    The SPEC §5 rules — the twin of pipeline/classify.py
+  coverage.ts    Lemma counts and the §5 Step 4 figure
+  segments.ts    splitChapterIfNeeded. The only module that knows 18.
+  knownLemmas.ts §7's two routes to "known", unioned
   bundle/        parseBundle — the validator
-  ports/         Repository interfaces
+  session/       The teaching session as a pure reducer
+  srs/           The ts-fsrs wrapper. The only file that imports it.
+  ports/         Repository interfaces, and Clock
   view/          View models: the screens receive these and render them
 src/infra/       Dexie. The only place that knows IndexedDB exists.
 src/ui/          Components. They render view models and compute nothing.
-src/app/         Wiring: router, repository injection, import
+src/app/         Wiring: router, repository injection, import, loadSession
 tests/domain/    Vitest, node environment
+tests/           teachingLoop.test.ts — the flow, over in-memory ports
 ```
 
 The rules behind that split are in `../CLAUDE.md`. Two of them are worth
@@ -107,9 +115,49 @@ restoration, and the four measures above are enough — the 1,136-paragraph
 chapter was scrolled on the iPad and felt fine. Do not add windowing without a
 device measurement saying that stopped being true.
 
+## The teaching loop
+
+Two rules that are easy to break by accident, on top of the two above.
+
+**Nothing reads `Chapter.teachSet`.** It was computed at prep time against a
+known-set that is now stale, and it is a display hint at most. Sessions
+recompute from the chapter's own lemma counts against what you know right now.
+There is a test asserting the two disagree — 18 recomputed against 25 baked on
+the fixture's first chapter.
+
+**Cards are keyed by lemma, globally.** `LemmaKey` (`m0031`) is book-scoped and
+means nothing outside its bundle; `LemmaId` is the bare lemma string and is what
+a card is filed under. `CardRepository` has no `bookId` in it anywhere, which is
+the enforcement rather than a convention — and `deleteBook` leaves cards alone,
+because removing a book does not unlearn its vocabulary.
+
+`splitChapterIfNeeded` cuts segments in **reading order** and sorts the cards
+**within** a segment by `bookCount`. Both orderings are in SPEC §5 Step 3 and
+they are not in conflict — they apply at different levels. Segments fill to a
+paragraph boundary, so the fixture's chapter 2 lands 15 + 7 rather than 18 + 4.
+
+Segment numbers are never persisted. Finishing a session gives its words cards,
+which removes them from the next selection, so the next session is always
+segment 0 of what is left.
+
+## Coverage understates readability until Phase 5
+
+Learning every word the fixture's chapter 1 will ever teach reaches 20 of its 35
+word tokens — a ceiling of **57%**. The missing 15 are `el`×7, `su`×2, `de`,
+`y`, `por`, `entre`, `desde`: closed-class words the teach set deliberately
+never contains, so they never become known, so they never count as covered.
+
+This is not a bug and the fix is not to teach `el`. SPEC §8's Anki seed lands in
+Phase 5 and marks the function words known in one pass. Until then the 0.90
+warning fires on every book, and it is the warning that is premature rather than
+the arithmetic. There is a test pinning the ceiling and the explanation.
+
 ## What is not here yet
 
-Phase 3 is the reader shell. Teach sets, FSRS, chapter gating, the review
-screen, the `Add card` button in the gloss sheet, coverage display and Anki
-seeding are Phases 4–6. Chapters carry their `teachSet` in storage already;
-nothing reads it.
+Phase 4 is the teaching loop. The cross-book review screen (§6.5), the `Add
+card` button in the gloss sheet (§6.4) and Anki seeding (§8) are Phases 5–6.
+
+The Dexie implementations are exercised by the type checker and by hand, not by
+the test suite: `tests/teachingLoop.test.ts` runs the flow over in-memory ports
+because covering the real ones in node would mean adding `fake-indexeddb`, and
+dependencies get asked about first.

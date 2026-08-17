@@ -129,6 +129,62 @@ Code, comments, commit messages, and this documentation are in English.
 
 ## Current phase
 
+**Phase 4 — Teaching loop. Built and green. Not verified on the device yet.**
+
+`npm test` in `/app` is 167 tests across 11 files. The domain layer went in
+first and the UI after it, per rule 3. What is *not* verified is the Dexie half
+and the rendering: `tests/teachingLoop.test.ts` runs the whole flow over
+in-memory ports, so the schema, the migration and the screens have been
+typechecked and built but not yet exercised on hardware. That is the outstanding
+item for this phase — the same boundary Phase 3 closed on the iPad.
+
+Six things settled while building it:
+
+1. **Closed-class parts of speech are never taught.** This answers Phase 1's
+   note 2, which forbade inventing a rule silently. Measured on chapter 0 of
+   `las-noches-mejicanas`, §5 unmodified makes 16 of the first 18 cards function
+   words — `el`, `de`, `él`, `a`, `y`, `en`, `uno`, `que` — because `zipf >= 3.5`
+   catches every one and `bookCount` sorts them to the top. Excluded: `ADP AUX
+   CCONJ DET NUM PART PRON PUNCT SCONJ SYM X`. `INTJ` is deliberately *not*
+   excluded — `¡órale!` is the point. They are still glossed.
+2. **`LemmaKey` is book-scoped; `LemmaId` is the bare lemma string and is
+   global.** Cards and known-marks are filed under the latter. `classify.py`
+   already tests `entry.lemma in known_lemmas` and the Phase 5 seed is a flat
+   array of lemma strings, so the app had to agree. `CardRepository` has no
+   `bookId` in it anywhere — that absence is the enforcement, not a convention —
+   and `deleteBook` deliberately leaves cards alone.
+3. **The app never reads `Chapter.teachSet`.** It was computed against a stale
+   known-set. Sessions recompute from the chapter's counts against live state;
+   a test pins that the two disagree, 18 against the fixture's baked 25.
+4. **A lemma is taught where it occurs, not where it debuts.** This diverges
+   from `classify.py`'s `firstChapter` on purpose: the pipeline has no card
+   store to consult and we do. Opening chapter 3 cold therefore teaches the
+   chapter-0 vocabulary it reuses instead of only underlining it.
+5. **Having a card and being known are different tests**, and collapsing them
+   breaks one thing or the other. A word studied this morning must not be taught
+   again (so: `carded`) and must not count towards coverage (so: not `known`).
+6. **`SessionRepository.commit` takes the reducer's effects and writes them with
+   the session in one transaction.** Split into two calls, iOS suspends the tab
+   between them and the resumed session re-grades a card FSRS has already seen.
+
+**Coverage understates readability until Phase 5, by design.** Learning every
+word the fixture's chapter 1 will ever teach reaches 20 of its 35 word tokens —
+a ceiling of 57%. The missing 15 are `el`×7, `su`×2, `de`, `y`, `por`, `entre`,
+`desde`, which are never taught and so never become known. The 0.90 warning will
+therefore fire on every book until SPEC §8's Anki seed marks the function words
+known in one pass. The warning is premature, not the arithmetic — **do not "fix"
+this by teaching `el`.** There is a test pinning the ceiling.
+
+**Windowing is still not built and still not needed.** Nothing in Phase 4 adds a
+span per token.
+
+**Next: Phase 5 — Anki seed + review screen.**
+Import `known.json`, add cross-book daily review. Success: the app stops
+teaching you words you already know. Phase 5 is also what makes the coverage
+figure honest, per the note above.
+
+---
+
 **Phase 3 — Reader shell. Complete.** Verified on the iPad: installed from the
 home screen, bundle imported from Files, chapter read, words glossed on tap,
 position restored after a kill, and the whole thing working in airplane mode.
@@ -267,17 +323,7 @@ Three things carried forward:
    report's zipf-0.00 diagnostic is the measurement; compare against
    `es_core_news_md` before committing to a glossing pass.
 
-**Next: Phase 4 — Teaching loop.**
-Teach-set selection, introduction phase, FSRS recall phase, chapter gating.
-Success: you learn 18 words, then read the chapter and notice the difference.
-
-Read `app/README.md` first — it holds the layout, the measurements and the two
-rules that are easiest to break by accident.
-
-Phase 4 is the first phase that touches the domain layer's real subject matter,
-and two things already recorded here decide how it starts: the unseeded teach
-set is full of function words (Phase 1, note 2 — unresolved, do not invent a
-rule silently), and every chapter of the fixture already exceeds the 18-card
-cap, so `splitChapterIfNeeded` is not optional.
+Read `app/README.md` first — it holds the layout, the measurements and the rules
+that are easiest to break by accident.
 
 Update this section when a phase completes.
