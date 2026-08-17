@@ -4,7 +4,9 @@ The device half of Molcajete. A React PWA that imports a `.molcajete.json`
 bundle and lets you read it offline.
 
 It makes **no network calls at runtime**. After one visit and one import it
-works in airplane mode, and there is nothing in it that would need a server.
+works in airplane mode — verified on an iPad, launched from the home screen.
+
+Live at https://stoneyboney.github.io/molcajete/
 
 ## Running it
 
@@ -21,17 +23,19 @@ npm run preview`.
 
 ## Deploying
 
-One-time, in the browser: create the GitHub repo, then
-**Settings → Pages → Source → GitHub Actions**.
-
-After that:
-
 ```bash
 git push
 ```
 
 `.github/workflows/deploy.yml` runs the tests, builds `app/`, and publishes to
-`https://<user>.github.io/molcajete/`. A red test does not get published.
+https://stoneyboney.github.io/molcajete/. A red test does not get published.
+
+`origin` is HTTPS and authenticates from a token in the macOS keychain — there
+is no SSH key on the development machine.
+
+GitHub's legacy `pages build and deployment` workflow also runs on every push
+and fails every time. It is cosmetic: `Deploy` is what publishes. Setting
+Settings → Pages → Source explicitly to **GitHub Actions** stops it running.
 
 `base` in `vite.config.ts` is `/molcajete/` and the manifest's `start_url` and
 `scope` have to agree with it. Renaming the repo means changing all three.
@@ -99,8 +103,9 @@ The numbers that shaped the reader, measured on
   from a height estimate in the view model.
 
 Windowing is deliberately not used. It fights text selection and scroll
-restoration, and the four measures above were expected to be enough; if a real
-iPad disagrees, that is the next thing to reach for.
+restoration, and the four measures above are enough — the 1,136-paragraph
+chapter was scrolled on the iPad and felt fine. Do not add windowing without a
+device measurement saying that stopped being true.
 
 ## What is not here yet
 

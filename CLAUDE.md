@@ -129,20 +129,26 @@ Code, comments, commit messages, and this documentation are in English.
 
 ## Current phase
 
-**Phase 3 — Reader shell. Built. Not verified on the device; that is the next
-thing to do and it is the only thing that can declare the phase done.**
+**Phase 3 — Reader shell. Complete.** Verified on the iPad: installed from the
+home screen, bundle imported from Files, chapter read, words glossed on tap,
+position restored after a kill, and the whole thing working in airplane mode.
+That last one is the SPEC §12 success condition.
 
 `/app` is a React + TypeScript + Vite PWA. It imports a bundle, lists chapters,
 renders one, and glosses a word on tap. It makes no network call at runtime.
 `npm test && npm run build` in `/app`; see `app/README.md`.
 
-The deploy path was built before the first feature, because service workers and
-Add to Home Screen need HTTPS and cannot be tested from a laptop dev server.
-Pushing to `main` runs the tests, builds `app/` and publishes to GitHub Pages.
-**The deploy step is `git push`.** One-time setup: create the repo and set
-Settings → Pages → Source → GitHub Actions. `base` in `vite.config.ts` is
-`/molcajete/` and the manifest's `start_url` and `scope` must agree with it —
+Live at **https://stoneyboney.github.io/molcajete/**. Pushing to `main` runs the
+tests, builds `app/` and publishes to GitHub Pages — **the deploy step is
+`git push`**, and a red test does not publish. `base` in `vite.config.ts` is
+`/molcajete/` and the manifest's `start_url` and `scope` must agree with it;
 renaming the repo means changing all three.
+
+Two notes on the remote, both cost an hour to work out once. There is no SSH key
+on this machine, so `origin` is HTTPS and authenticates from a token in the
+macOS keychain. And GitHub's legacy `pages build and deployment` workflow runs
+alongside `Deploy` and fails every time; it is cosmetic — `Deploy` is what
+publishes — and setting Pages → Source explicitly to GitHub Actions silences it.
 
 Five things settled while building it:
 
@@ -167,24 +173,15 @@ Five things settled while building it:
    domain layer stays language-neutral so the Swift port does not inherit
    German strings.
 
-Two things deliberately not built, so nobody goes looking for them: windowing
-(it fights text selection and scroll restoration — the four measures above were
-expected to be enough, and only a real iPad can say otherwise), and
-`CardRepository` / `KnownLemmaRepository`, which rule 4 names but which arrive
-in Phase 4 with their stores and their first caller.
+**Windowing is not built, and the iPad says it is not needed.** The
+1,136-paragraph chapter of `las-noches-mejicanas` was scrolled on the device and
+felt fine, so the four measures above are sufficient at real scale. Windowing
+would fight text selection and scroll restoration for no gain — do not add it
+without a device measurement that says the four measures stopped being enough.
 
-**What still has to happen on the iPad**, in this order — none of it can be
-checked from here:
-
-1. Push, Actions green, open the Pages URL in Safari, Add to Home Screen.
-2. AirDrop `bundles/anonimo-los-del-cerro.molcajete.json`, import from Files,
-   read a chapter, tap a word, toggle **Alle Glossen**, kill and reopen and
-   confirm the position restored.
-3. Import `aimard-las-noches-mejicanas.molcajete.json` — the 1,136-paragraph
-   chapter is the scroll test, and the laptop cannot answer it.
-4. Airplane mode, launched from the home-screen icon. This is the SPEC §12
-   success condition for Phase 3.
-5. Web Inspector against the iPad with the reader open: zero network activity.
+`CardRepository` and `KnownLemmaRepository` are also not built. Rule 4 names
+them; they arrive in Phase 4 with their stores and their first caller, rather
+than as empty interfaces guessing at what FSRS needs.
 
 **Phase 2 — Glosses. The fallback runs. Not declared complete; see the two open
 questions below.**
@@ -274,11 +271,13 @@ Three things carried forward:
 Teach-set selection, introduction phase, FSRS recall phase, chapter gating.
 Success: you learn 18 words, then read the chapter and notice the difference.
 
-Do not start it before the device checks above have been done. Phase 3's
-success condition is a chapter read on the iPad in airplane mode, and nothing
-run on the laptop can stand in for it.
-
 Read `app/README.md` first — it holds the layout, the measurements and the two
 rules that are easiest to break by accident.
+
+Phase 4 is the first phase that touches the domain layer's real subject matter,
+and two things already recorded here decide how it starts: the unseeded teach
+set is full of function words (Phase 1, note 2 — unresolved, do not invent a
+rule silently), and every chapter of the fixture already exceeds the 18-card
+cap, so `splitChapterIfNeeded` is not optional.
 
 Update this section when a phase completes.
