@@ -129,13 +129,15 @@ Code, comments, commit messages, and this documentation are in English.
 
 ## Current phase
 
-**Phase 2 — Glosses. Code complete; the fallback's first real run is pending.**
+**Phase 2 — Glosses. The fallback runs. Not yet declared complete; see the two
+open questions below.**
 
 The Wiktionary half runs and is cached. The model half was written against the
 Claude Batches API and could not be run — no credentials — so a local provider
-was added to unblock it.
+was added to unblock it. That path has now been exercised end to end against
+`gemma3:12b`, 201 lemmas of `Las noches mejicanas`, in 17 minutes for nothing.
 
-Three things settled while doing that:
+Four things settled while doing that:
 
 1. **The gloss fallback is behind a port.** `glossing/provider.py` defines
    `GlossProvider`; `claude.py` and `ollama.py` implement it; `--gloss-provider`
@@ -151,6 +153,38 @@ Three things settled while doing that:
    them. Scoping them per provider would undo the warm-rebuild fix from 6ff7dce
    — 3.1 GB of dumps re-streamed on the first `--gloss-provider ollama` build.
    There is a test pinning this; do not "tidy" it.
+4. **A local model is slow, not expensive.** 0.25 lemmas/second on an M4 Pro at
+   `--gloss-concurrency 2`, so a nine-thousand-lemma book is about ten hours.
+   More concurrency is *slower*, measured. Plan around it rather than tuning it.
+
+What the trial measured, for comparison when Claude credentials appear:
+
+| | gemma3:12b |
+|---|---|
+| German gloss on lemmas it accepted as Spanish | 171/171 |
+| Rejected as not Spanish | 29 of 201 |
+| Needed a stricter retry | 2 · failed after retry 1 |
+| Mexicanism recall, gold set asked directly | 21/26 |
+| Mexicanisms found in 200 book lemmas | 0 |
+
+**Two open questions. Neither blocks Phase 3; both block calling Phase 2 done.**
+
+1. **It invents glosses for words that do not exist.** Of 53 zipf-0.00 lemmas
+   in the sample it rejected 25 and glossed 28. Some of those 28 are real rare
+   words (`acecinar`, `bambolear`, `bergante`); many are lemmatizer garbage
+   — `cenir`, `correspondar`, `majadeer` — that received confident, plausible,
+   invented German. It also glossed `soon` and `niente`, English and Italian
+   leaking in from Gutenberg boilerplate. The prompt forbids this explicitly and
+   nothing downstream can detect it. Unknown whether it is a local-model
+   weakness or a prompt weakness: Claude's rejection rate on the same stratum is
+   unmeasured. Run the same trial with `--provider claude` to find out.
+2. **Zero mexicanisms across 200 book lemmas, against 21/26 on the same model
+   minutes later.** The difference is the example sentence: given 1870s literary
+   prose the model reads the register as archaic rather than Mexican. That may
+   be correct for Payno and would be a serious failure on a modern Mexican
+   novel. It cannot be told apart until the pipeline is pointed at one — which
+   is a reason to keep looking for a DRM-free `Los de abajo`, or anything
+   twentieth-century.
 
 **Phase 1 — Prep pipeline skeleton. Complete.**
 
