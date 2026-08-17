@@ -7,7 +7,12 @@ import {
   splitChapterIfNeeded,
 } from '../../src/domain/segments'
 import { selectTeachSet } from '../../src/domain/teachSet'
-import type { Chapter, LemmaKey, LexiconEntry } from '../../src/domain/types'
+import {
+  isTappable,
+  type Chapter,
+  type LemmaKey,
+  type LexiconEntry,
+} from '../../src/domain/types'
 import { readFixture } from '../fixture'
 
 /** A chapter of `n` paragraphs, each introducing `perParagraph` fresh lemmas. */
@@ -34,7 +39,7 @@ function keysOf(chapter: Chapter): LemmaKey[] {
   const keys: LemmaKey[] = []
   for (const paragraph of chapter.paragraphs) {
     for (const token of paragraph.tokens) {
-      if (token.t !== undefined) keys.push(token.t)
+      if (isTappable(token)) keys.push(token.t)
     }
   }
   return keys
