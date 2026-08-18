@@ -99,8 +99,20 @@ def title_from_html(html: str) -> str | None:
     return normalize_text(heading.get_text()) or None
 
 
-def split_html_on_headings(html: str) -> list[tuple[str | None, str]]:
-    """Split one document into `(title, html)` sections at heading boundaries.
+@dataclass(frozen=True)
+class HtmlSection:
+    """One heading's worth of a packed document."""
+
+    title: str | None
+    html: str
+    # The heading's `id`, when it has one. A packed edition addresses its
+    # chapters from the table of contents by fragment — `PrimeraParte.xhtml
+    # #sigil_toc_id_3` — so this is the only way back to a chapter's real name.
+    anchor: str | None = None
+
+
+def split_html_on_headings(html: str) -> list[HtmlSection]:
+    """Split one document into sections at heading boundaries.
 
     For editions that pack several chapters into a single spine document. Text
     before the first heading becomes an untitled leading section; if there are no
@@ -109,15 +121,20 @@ def split_html_on_headings(html: str) -> list[tuple[str | None, str]]:
     soup = BeautifulSoup(html, "html.parser")
     root = soup.body or soup
 
-    sections: list[tuple[str | None, list[str]]] = [(None, [])]
+    sections: list[tuple[str | None, str | None, list[str]]] = [(None, None, [])]
     for element in root.find_all(recursive=False):
         if element.name in _HEADING_TAGS:
-            sections.append((normalize_text(element.get_text()) or None, []))
+            title = normalize_text(element.get_text()) or None
+            sections.append((title, element.get("id") or None, []))
         else:
-            sections[-1][1].append(str(element))
+            sections[-1][2].append(str(element))
 
-    populated = [(title, "".join(parts)) for title, parts in sections if "".join(parts).strip()]
-    return populated or [(None, html)]
+    populated = [
+        HtmlSection(title=title, html="".join(parts), anchor=anchor)
+        for title, anchor, parts in sections
+        if "".join(parts).strip()
+    ]
+    return populated or [HtmlSection(title=None, html=html)]
 
 
 # Project Gutenberg wraps every text in these markers. Everything outside them is
@@ -169,11 +186,19 @@ def strip_gutenberg_boilerplate(chapters: list[ChapterSource]) -> list[ChapterSo
 
 
 def _toc_titles(book: epub.EpubBook) -> dict[str, str]:
-    """Map document filename to its table-of-contents title.
+    """Map table-of-contents targets to their titles.
 
-    The TOC is a tree of `Link` and `(Section, children)` nodes; fragments are
-    dropped so that several TOC entries pointing into one document all resolve to
-    that document.
+    Two kinds of key, and a packed edition needs both:
+
+    * `PrimeraParte.xhtml` — the document's own title. First entry wins, so a
+      sub-heading pointing into the middle of a document cannot steal it.
+    * `PrimeraParte.xhtml#sigil_toc_id_3` — one chapter inside it. An edition
+      that puts all 21 chapters of a part in one file names them only here, and
+      the fragment matches the `id` on the chapter's heading. Without these the
+      titles fall back to the heading text and come out as `I`, `II`, `III`,
+      repeating across every part of the book.
+
+    The TOC is a tree of `Link` and `(Section, children)` nodes.
     """
     titles: dict[str, str] = {}
 
@@ -188,13 +213,17 @@ def _toc_titles(book: epub.EpubBook) -> dict[str, str]:
                 _record(node)
 
     def _record(link: epub.Link) -> None:
-        href = link.href.split("#", 1)[0]
-        name = posixpath.basename(href)
+        path, _, fragment = link.href.partition("#")
+        name = posixpath.basename(path)
         title = normalize_text(link.title or "")
-        # First entry wins: a document's own TOC title beats a sub-heading that
-        # happens to point into the middle of it.
-        if name and title and name not in titles:
-            titles[name] = title
+        if not name or not title:
+            return
+        if fragment:
+            # Fragments are unique by construction, so last would be as good as
+            # first; keep first for consistency with the document rule.
+            titles.setdefault(f"{name}#{fragment}", title)
+        else:
+            titles.setdefault(name, title)
 
     walk(book.toc)
     return titles
@@ -300,13 +329,30 @@ def extract_chapters(
         if split_on_heading:
             sections = split_html_on_headings(html)
         else:
-            sections = [(document_title or title_from_html(html), html)]
+            sections = [
+                HtmlSection(title=document_title or title_from_html(html), html=html)
+            ]
 
-        for section_title, section_html in sections:
-            paragraphs = paragraphs_from_html(section_html)
+        for section in sections:
+            paragraphs = paragraphs_from_html(section.html)
             if not paragraphs:
                 continue
-            title = section_title or document_title or f"Capítulo {len(chapters) + 1}"
+
+            # The table of contents first, because it is the edition's own name
+            # for the chapter — "I. Te digo que no es un animal" rather than the
+            # bare "I" the heading carries. Then the heading, then the document,
+            # then a generated number.
+            toc_title = (
+                toc_titles.get(f"{filename}#{section.anchor}")
+                if section.anchor
+                else None
+            )
+            title = (
+                toc_title
+                or section.title
+                or document_title
+                or f"Capítulo {len(chapters) + 1}"
+            )
             chapters.append(ChapterSource(title=title, paragraphs=tuple(paragraphs)))
 
     if keep_boilerplate:

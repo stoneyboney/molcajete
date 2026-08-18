@@ -121,12 +121,25 @@ class TestSplitOnHeadings:
 
         sections = split_html_on_headings(html)
 
-        assert [title for title, _ in sections] == ["Primera parte", "Segunda parte"]
+        assert [s.title for s in sections] == ["Primera parte", "Segunda parte"]
 
     def test_returns_the_document_whole_when_it_has_no_headings(self):
         html = "<body><p>Uno.</p></body>"
 
         assert len(split_html_on_headings(html)) == 1
+
+    def test_carries_the_heading_id_so_the_toc_can_be_consulted(self):
+        html = '<body><h2 id="ch_i">I</h2><p>Uno.</p></body>'
+
+        [section] = split_html_on_headings(html)
+
+        assert section.title == "I"
+        assert section.anchor == "ch_i"
+
+    def test_a_heading_without_an_id_has_no_anchor(self):
+        html = "<body><h2>I</h2><p>Uno.</p></body>"
+
+        assert split_html_on_headings(html)[0].anchor is None
 
     def test_title_from_html_reads_the_first_heading(self):
         assert title_from_html("<body><h3>Capítulo 4</h3><p>x</p></body>") == "Capítulo 4"
@@ -237,6 +250,36 @@ class TestCriticalEdition:
         assert "[1]" not in prose
         assert "[2]" not in prose
         assert "jacal." in prose  # and the sentence still ends properly
+
+    def test_packed_chapters_take_their_names_from_the_toc_fragment(
+        self, critical_edition_epub
+    ):
+        # Both parts number their chapters from the heading text alone, so
+        # without the fragment lookup these would be "I", "II", "III" — and in
+        # a real book the numbering restarts, so they would also collide.
+        chapters = extract_chapters(
+            str(critical_edition_epub),
+            split_on_heading=True,
+            include_documents=["PrimeraParte*", "SegundaParte*"],
+        )
+
+        assert [c.title for c in chapters] == [
+            "I. Miró la sierra",
+            "II. El caballo subió",
+            "III. La sierra guardó",
+        ]
+
+    def test_titles_are_unique_so_the_chapter_list_is_readable(
+        self, critical_edition_epub
+    ):
+        chapters = extract_chapters(
+            str(critical_edition_epub),
+            split_on_heading=True,
+            include_documents=["PrimeraParte*", "SegundaParte*"],
+        )
+
+        titles = [c.title for c in chapters]
+        assert len(set(titles)) == len(titles)
 
     def test_excluding_the_apparatus_reaches_the_same_place(
         self, critical_edition_epub
