@@ -81,6 +81,8 @@ Useful flags:
 |---|---|
 | `--book-id`, `--title`, `--author` | Override what was read from the EPUB metadata |
 | `--split-on-heading` | Split each spine document on `<h1>`–`<h6>`. Use when an edition packs several chapters into one file. |
+| `--include-documents GLOB…` | Keep only the spine documents matching these globs — for critical editions, see below |
+| `--exclude-documents GLOB…` | Drop the spine documents matching these globs. Applied after `--include-documents`. |
 | `--known path/to/known.json` | Treat these lemmas as already known (Phase 5; defaults to empty) |
 | `--report-only` | Print the report to stdout, write nothing |
 | `--gloss-offline` | Wiktionary and the cache only. No model, no spend. |
@@ -94,6 +96,39 @@ Useful flags:
 Local-model flags — `--gloss-concurrency` (default 2), `--gloss-retries`
 (default 1), `--gloss-chunk` (default 1 locally, 25 for Claude) — are described
 under **Running a local model** below.
+
+## Critical editions
+
+A scholarly edition carries an introduction, endnotes, an analysis, a biography
+and a bibliography in the same spine as the novel, and they are not the book.
+Taken in, their words become the book's vocabulary and inflate the `bookCount`
+that decides what gets taught — on prose you will never read — and they arrive
+in the reader as chapters called *Bibliografía*.
+
+The Marta Portal `Los de abajo` is the case that prompted the flags: three
+documents of novel (~244 KB) against nine of apparatus (~200 KB).
+
+```bash
+uv run python build_bundle.py "sources/Los de abajo.epub" \
+    --include-documents 'PrimeraParte*' 'SegundaParte*' 'TerceraParte*' \
+    --split-on-heading \
+    --book-id azuela-los-de-abajo --title "Los de abajo"
+```
+
+Look at the spine before choosing globs — `unzip -l book.epub` lists the
+documents, and the table of contents names them. An include that matches nothing
+is an error rather than an empty book.
+
+Two things that edition also needs, both automatic:
+
+- **Footnote markers are dropped.** An annotated edition writes them inline as
+  `<a href="notas.xhtml#nt54"><sup>[54]</sup></a>`, which extracts as
+  `federales[54]`. `<sup>` is treated as non-prose.
+- **Chapter names come from the table of contents.** With `--split-on-heading`
+  the headings of a packed part are often bare numerals, and the numbering
+  restarts in each part — three chapters called `I`. The TOC addresses each one
+  by fragment and names it properly, so `Los de abajo` comes out as 42 chapters
+  with 42 distinct titles.
 
 ## Glossing
 
@@ -167,11 +202,34 @@ local path is written for that rather than hoping otherwise:
 
 ### How long a book takes
 
-About **0.25 lemmas per second**, so a nine-thousand-lemma novel is roughly ten
-hours of wall clock. That is not a problem to fix so much as a fact to plan
-around: start it and go to bed. The gloss cache means you pay it once across all
-books, and `--gloss-limit` is there if you want the commonest few hundred lemmas
-glossed now and the tail later.
+About **0.2 lemmas per second** — measured at 0.25 on `las-noches` and 0.19 on
+`Los de abajo`, both gemma3:12b on an M4 Pro. So a five-thousand-lemma novel is
+around six hours and a nine-thousand-lemma one is ten. That is not a problem to
+fix so much as a fact to plan around: start it and go to bed. The gloss cache
+means you pay it once across all books, and `--gloss-limit` is there if you want
+the commonest few hundred lemmas glossed now and the tail later.
+
+Do not trust the progress counter in the log as a rate. It reports chunks
+dispatched and completed in memory; what has actually been *kept* is rows in the
+cache:
+
+```bash
+sqlite3 cache/glosses.sqlite3 \
+  "select count(*) from glosses where provider='ollama';"
+```
+
+### An interrupted pass keeps its work
+
+Glosses are written to the cache as each chunk lands, not once at the end, and
+the cache is read before the provider is called. So a run that is killed — a
+closed lid, a stopped process, a restarted Ollama — loses at most the chunk in
+flight, and starting it again asks only for what is still missing. Re-run the
+same command; there is no resume flag.
+
+This was not always true. The first full pass over `Los de abajo` was killed at
+2,067 of 4,811 lemmas and left **nothing** behind, because the pass persisted
+only on completion. About an hour of compute, discarded. If you are changing
+`glossing/pipeline.py`, keep the write inside the `on_written` callback.
 
 An unreachable Ollama server stops the build rather than producing a bundle with
 no glosses in it. Everything else is a number in the report.
@@ -216,21 +274,26 @@ where a book is unavailable DRM-free, the answer is to read it on paper.
 
 ### On `Los de abajo`
 
-SPEC §13.4 names Azuela's *Los de abajo* as the first development text and says
-it is on Project Gutenberg. It is not. Gutenberg carries only the 1929 English
-translation (*The Underdogs*, ebook 549). The Spanish original is absent from
-Gutenberg, Spanish Wikisource and textos.info; the Internet Archive copies are
-DRM-locked scans of modern in-copyright editions.
+**It is here now.** `sources/Los de abajo.epub` is the Marta Portal edition,
+DRM-free, Spanish original. Build it with the invocation under **Critical
+editions** above — it needs the document filter, because that edition ships as
+much apparatus as novel.
 
-The novel itself is public domain in Germany (Azuela died 1952) and the US
-(published 1915) — the obstacle is purely that no clean DRM-free EPUB of it is
-freely downloadable. Until one turns up, develop against any Spanish EPUB from
-Gutenberg. Manuel Payno's *Las noches mejicanas* is Mexican and works well:
+The history is worth keeping, because SPEC §13.4 is wrong and someone will
+follow it. It says the novel is on Project Gutenberg; it is not. Gutenberg
+carries only the 1929 English translation (*The Underdogs*, ebook 549), and the
+Spanish original is absent from Gutenberg, Spanish Wikisource and textos.info,
+while the Internet Archive copies are DRM-locked scans of modern in-copyright
+editions. The novel itself is public domain in Germany (Azuela died 1952) and
+the US (published 1915) — the obstacle was only ever finding a clean DRM-free
+EPUB.
+
+Manuel Payno's *Las noches mejicanas* remains a useful second text, and is one
+`curl` away:
 
 ```bash
 mkdir -p sources
 curl -Lo sources/noches.epub https://www.gutenberg.org/ebooks/54430.epub3.images
 ```
 
-Nothing in the pipeline is book-specific. Swapping *Los de abajo* in later is
-one CLI invocation.
+Nothing in the pipeline is book-specific.
