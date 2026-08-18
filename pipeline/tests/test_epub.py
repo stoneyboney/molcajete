@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import pytest
+
 from molcajete_prep.epub import (
     ChapterSource,
     book_metadata,
     extract_chapters,
     normalize_text,
     paragraphs_from_html,
+    select_documents,
     split_html_on_headings,
     strip_gutenberg_boilerplate,
     title_from_html,
@@ -113,6 +116,115 @@ class TestSplitOnHeadings:
     def test_title_from_html_reads_the_first_heading(self):
         assert title_from_html("<body><h3>Capítulo 4</h3><p>x</p></body>") == "Capítulo 4"
         assert title_from_html("<body><p>x</p></body>") is None
+
+
+class TestSelectDocuments:
+    """A critical edition carries as much apparatus as novel, in one spine.
+
+    Left in, the editor's introduction and the bibliography become chapters of
+    the book and their words become the book's vocabulary — inflating the
+    `bookCount` that decides what gets taught, on prose the reader will never
+    see. Gutenberg's licence has markers to find it by; an editor's essay does
+    not, so which documents are the book is said at the command line.
+    """
+
+    NAMES = [
+        "Introduccion.xhtml",
+        "Bibliografia.xhtml",
+        "PrimeraParte.xhtml",
+        "SegundaParte.xhtml",
+        "notas.xhtml",
+    ]
+
+    def test_no_filters_keeps_everything_in_order(self):
+        assert select_documents(self.NAMES) == self.NAMES
+
+    def test_include_narrows_to_the_matches(self):
+        assert select_documents(self.NAMES, include=["*Parte*"]) == [
+            "PrimeraParte.xhtml",
+            "SegundaParte.xhtml",
+        ]
+
+    def test_include_takes_several_globs(self):
+        selected = select_documents(
+            self.NAMES, include=["PrimeraParte*", "SegundaParte*"]
+        )
+
+        assert selected == ["PrimeraParte.xhtml", "SegundaParte.xhtml"]
+
+    def test_exclude_removes_the_matches(self):
+        selected = select_documents(
+            self.NAMES, exclude=["Introduccion*", "Bibliografia*", "notas*"]
+        )
+
+        assert selected == ["PrimeraParte.xhtml", "SegundaParte.xhtml"]
+
+    def test_exclude_applies_after_include(self):
+        selected = select_documents(
+            self.NAMES, include=["*.xhtml"], exclude=["notas*", "Bib*", "Intro*"]
+        )
+
+        assert selected == ["PrimeraParte.xhtml", "SegundaParte.xhtml"]
+
+    def test_an_include_that_matches_nothing_raises(self):
+        # Silently producing an empty book would surface much later, as a
+        # confusing "yielded no chapters with prose in them".
+        with pytest.raises(ValueError, match="matched none of"):
+            select_documents(self.NAMES, include=["TerceraParte*"])
+
+    def test_an_exclude_that_removes_everything_raises(self):
+        with pytest.raises(ValueError, match="removed every document"):
+            select_documents(self.NAMES, exclude=["*"])
+
+
+class TestCriticalEdition:
+    def test_the_apparatus_is_a_chapter_unless_it_is_filtered_out(
+        self, critical_edition_epub
+    ):
+        chapters = extract_chapters(str(critical_edition_epub))
+
+        titles = [c.title for c in chapters]
+        assert "Introducción" in titles
+        assert "Bibliografía" in titles
+
+    def test_including_only_the_novel_drops_the_apparatus(
+        self, critical_edition_epub
+    ):
+        chapters = extract_chapters(
+            str(critical_edition_epub),
+            include_documents=["PrimeraParte*", "SegundaParte*"],
+        )
+
+        titles = [c.title for c in chapters]
+        assert "Introducción" not in titles
+        assert "Bibliografía" not in titles
+        assert "Notas" not in titles
+
+    def test_the_apparatus_vocabulary_does_not_reach_the_prose(
+        self, critical_edition_epub
+    ):
+        chapters = extract_chapters(
+            str(critical_edition_epub),
+            include_documents=["PrimeraParte*", "SegundaParte*"],
+        )
+
+        prose = " ".join(p for c in chapters for p in c.paragraphs)
+        for word in ("bibliografía", "crítica", "edición", "reseñas"):
+            assert word not in prose.lower()
+
+    def test_excluding_the_apparatus_reaches_the_same_place(
+        self, critical_edition_epub
+    ):
+        included = extract_chapters(
+            str(critical_edition_epub),
+            include_documents=["PrimeraParte*", "SegundaParte*"],
+        )
+        excluded = extract_chapters(
+            str(critical_edition_epub),
+            exclude_documents=["Introduccion*", "Bibliografia*", "notas*"],
+        )
+
+        assert included == excluded
 
 
 class TestGutenbergBoilerplate:

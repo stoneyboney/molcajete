@@ -8,9 +8,11 @@ DRM-free input only. There is no circumvention here and there never will be.
 
 from __future__ import annotations
 
+import fnmatch
 import posixpath
 import re
 import unicodedata
+from collections.abc import Sequence
 from dataclasses import dataclass
 
 import ebooklib
@@ -203,25 +205,88 @@ def _spine_documents(book: epub.EpubBook) -> list[epub.EpubItem]:
     return documents
 
 
+def select_documents(
+    names: Sequence[str],
+    include: Sequence[str] | None = None,
+    exclude: Sequence[str] | None = None,
+) -> list[str]:
+    """Filter spine document basenames by glob, include first and exclude after.
+
+    Critical and scholarly editions are the reason this exists. The Marta Portal
+    `Los de abajo` carries roughly as much apparatus as novel in one spine —
+    notes, analysis, a biography, a bibliography — and taking the lot would put
+    literary criticism into `bookCount`, which is the signal that decides what
+    gets taught, and *Bibliografía* into the chapter list.
+
+    That is the same problem `strip_gutenberg_boilerplate` solves for Gutenberg's
+    licence, but boilerplate has markers to find and an editor's essay does not.
+    Which documents are the book is a judgement, so it is made at the command
+    line rather than guessed at here.
+    """
+    selected = list(names)
+
+    if include:
+        selected = [
+            name
+            for name in selected
+            if any(fnmatch.fnmatch(name, pattern) for pattern in include)
+        ]
+        if not selected:
+            raise ValueError(
+                f"--include-documents {' '.join(include)!r} matched none of: "
+                f"{', '.join(names)}"
+            )
+
+    if exclude:
+        selected = [
+            name
+            for name in selected
+            if not any(fnmatch.fnmatch(name, pattern) for pattern in exclude)
+        ]
+        if not selected:
+            raise ValueError(
+                f"--exclude-documents {' '.join(exclude)!r} removed every document"
+            )
+
+    return selected
+
+
 def extract_chapters(
     epub_path: str,
     *,
     split_on_heading: bool = False,
     keep_boilerplate: bool = False,
+    include_documents: Sequence[str] | None = None,
+    exclude_documents: Sequence[str] | None = None,
 ) -> list[ChapterSource]:
     """Read an EPUB into ordered chapters.
 
     Documents that yield no prose (covers, blank pages, pure navigation) are
     dropped rather than emitted as empty chapters, and Project Gutenberg's
     licence is stripped unless `keep_boilerplate` says otherwise.
+
+    `include_documents` and `exclude_documents` are globs over spine basenames;
+    see `select_documents` for why they exist.
     """
     book = epub.read_epub(epub_path)
     toc_titles = _toc_titles(book)
 
+    documents = _spine_documents(book)
+    kept = set(
+        select_documents(
+            [posixpath.basename(item.get_name()) for item in documents],
+            include_documents,
+            exclude_documents,
+        )
+    )
+
     chapters: list[ChapterSource] = []
-    for item in _spine_documents(book):
-        html = item.get_content().decode("utf-8", errors="replace")
+    for item in documents:
         filename = posixpath.basename(item.get_name())
+        if filename not in kept:
+            continue
+
+        html = item.get_content().decode("utf-8", errors="replace")
         document_title = toc_titles.get(filename)
 
         if split_on_heading:

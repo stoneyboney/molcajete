@@ -61,6 +61,22 @@ def build_parser() -> argparse.ArgumentParser:
         "otherwise stripped as licence text",
     )
     parser.add_argument(
+        "--include-documents",
+        nargs="+",
+        metavar="GLOB",
+        help="keep only the spine documents whose filename matches one of these "
+        "globs, e.g. 'PrimeraParte*' 'SegundaParte*'. For critical editions, "
+        "where the introduction, notes and bibliography are as long as the "
+        "novel and would otherwise become chapters and vocabulary.",
+    )
+    parser.add_argument(
+        "--exclude-documents",
+        nargs="+",
+        metavar="GLOB",
+        help="drop the spine documents whose filename matches one of these "
+        "globs. Applied after --include-documents.",
+    )
+    parser.add_argument(
         "--pretty",
         action="store_true",
         help="indent the JSON for reading by eye (larger file)",
@@ -194,6 +210,8 @@ def main(argv: list[str] | None = None) -> int:
         options=options,
         split_on_heading=args.split_on_heading,
         keep_boilerplate=args.keep_boilerplate,
+        include_documents=args.include_documents,
+        exclude_documents=args.exclude_documents,
         gloss=not args.no_gloss,
         gloss_options=gloss_options,
         on_status=print_batch_status,

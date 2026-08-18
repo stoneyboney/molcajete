@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 import re
 import unicodedata
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -150,6 +150,8 @@ def build_bundle(
     options: ClassificationOptions = ClassificationOptions(),
     split_on_heading: bool = False,
     keep_boilerplate: bool = False,
+    include_documents: Sequence[str] | None = None,
+    exclude_documents: Sequence[str] | None = None,
     gloss: bool = True,
     gloss_options: GlossingOptions | None = None,
     gloss_client: Any = None,
@@ -162,6 +164,8 @@ def build_bundle(
         str(epub_path),
         split_on_heading=split_on_heading,
         keep_boilerplate=keep_boilerplate,
+        include_documents=include_documents,
+        exclude_documents=exclude_documents,
     )
     if not sources:
         raise ValueError(f"{epub_path} yielded no chapters with prose in them")

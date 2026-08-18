@@ -8,12 +8,21 @@ import pytest
 sys.path.insert(0, str(Path(__file__).parent / "fixtures"))
 
 from fixture_book import CHAPTERS, build_fixture_epub  # noqa: E402
+from fixture_critical_edition import build_critical_edition_epub  # noqa: E402
 
 
 @pytest.fixture(scope="session")
 def fixture_epub(tmp_path_factory: pytest.TempPathFactory) -> Path:
     """A freshly built synthetic EPUB, so tests never depend on a committed binary."""
     return build_fixture_epub(tmp_path_factory.mktemp("epub") / "fixture.epub")
+
+
+@pytest.fixture(scope="session")
+def critical_edition_epub(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    """A scholarly edition: apparatus in the spine, packed parts, footnotes."""
+    return build_critical_edition_epub(
+        tmp_path_factory.mktemp("epub") / "critical-edition.epub"
+    )
 
 
 @pytest.fixture(scope="session")
