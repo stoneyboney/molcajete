@@ -96,6 +96,21 @@ class TestParagraphsFromHtml:
 
         assert paragraphs_from_html(html) == ["Uno."]
 
+    def test_drops_footnote_markers_and_closes_the_text_up(self):
+        # An annotated edition puts the marker inside the sentence. Left in, the
+        # reader has to render `federales[54]` and the lexicon has to hold it.
+        html = (
+            "<body><p>¿Y que fueran siendo federales"
+            '<a href="notas.xhtml#nt54" id="rf54"><sup>[54]</sup></a>?</p></body>'
+        )
+
+        assert paragraphs_from_html(html) == ["¿Y que fueran siendo federales?"]
+
+    def test_drops_a_marker_that_is_not_wrapped_in_a_link(self):
+        html = "<body><p>tortillas<sup>[55]</sup> en taco.</p></body>"
+
+        assert paragraphs_from_html(html) == ["tortillas en taco."]
+
 
 class TestSplitOnHeadings:
     def test_splits_a_packed_document_into_sections(self):
@@ -211,6 +226,17 @@ class TestCriticalEdition:
         prose = " ".join(p for c in chapters for p in c.paragraphs)
         for word in ("bibliografía", "crítica", "edición", "reseñas"):
             assert word not in prose.lower()
+
+    def test_no_footnote_marker_survives_into_the_prose(self, critical_edition_epub):
+        chapters = extract_chapters(
+            str(critical_edition_epub),
+            include_documents=["PrimeraParte*", "SegundaParte*"],
+        )
+
+        prose = " ".join(p for c in chapters for p in c.paragraphs)
+        assert "[1]" not in prose
+        assert "[2]" not in prose
+        assert "jacal." in prose  # and the sentence still ends properly
 
     def test_excluding_the_apparatus_reaches_the_same_place(
         self, critical_edition_epub

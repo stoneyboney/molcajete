@@ -20,7 +20,15 @@ from bs4 import BeautifulSoup
 from ebooklib import epub
 
 # Elements whose text is never prose.
-_NON_PROSE_TAGS = ("script", "style", "head", "title")
+#
+# `sup` is here for footnote and endnote markers. An annotated edition renders
+# them as `<a href="notas.xhtml#nt54"><sup>[54]</sup></a>` inside the sentence,
+# and `get_text()` turns that into `federales[54]` — a token the reader would
+# have to render, the tokenizer would have to lemmatize, and the lexicon would
+# have to hold. In the three parts of `Los de abajo` all 207 `<sup>` elements
+# are reference markers and none is prose, which is what a superscript in a
+# novel almost always is.
+_NON_PROSE_TAGS = ("script", "style", "head", "title", "sup")
 
 _HEADING_TAGS = ("h1", "h2", "h3", "h4", "h5", "h6")
 
