@@ -441,8 +441,9 @@ class ClaudeProvider:
         tasks: Sequence[GlossTask],
         *,
         on_status: Any = None,
+        on_written: Any = None,
     ) -> tuple[dict[Identity, Gloss], BatchStats]:
-        return run(
+        glosses, stats = run(
             tasks,
             self.settings,
             client=self.client,
@@ -450,6 +451,12 @@ class ClaudeProvider:
             poll_seconds=self.poll_seconds,
             on_status=on_status,
         )
+        # Once, at the end. The Batches API hands back a finished batch rather
+        # than a stream, so there is nothing earlier to hand over — the callback
+        # is honoured for the caller's sake, not for resumability.
+        if on_written is not None and glosses:
+            on_written(glosses)
+        return glosses, stats
 
     def describe(self) -> str:
         return (

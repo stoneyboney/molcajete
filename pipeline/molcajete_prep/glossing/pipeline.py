@@ -306,25 +306,35 @@ def gloss_lexicon(
             result.sent_to_model = len(tasks)
             result.ran_model = True
 
-            written, stats = provider.gloss(tasks, on_status=on_status)
-            result.stats = stats
-            for identity, gloss in written.items():
-                current = by_identity.get(identity)
-                by_identity[identity] = current.merged_with(gloss) if current else gloss
-
+            # Persist each batch the moment it arrives rather than once at the
+            # end. A local pass over this book is 4,811 lemmas and hours long,
+            # and writing only on completion meant a single interruption threw
+            # away two thousand finished glosses. Because the cache is consulted
+            # before the provider is called, this also makes an interrupted run
+            # resume where it stopped instead of starting over.
+            #
             # Only what the model itself said goes in the model scope. Writing
             # the merged gloss there would file English Wiktionary's answer
             # under the model's name, and a later build reading that row could
             # not tell which half the model is accountable for.
-            cache.put_many(
-                [written[identity] for identity in written],
-                now=now,
-                provider=provider.name,
-                model=provider.model,
-                prompt_version=PROMPT_VERSION,
-                examples={identity: examples.get(identity) for identity in written},
-                book_id=book_id,
+            def persist(batch: dict[Identity, Gloss]) -> None:
+                cache.put_many(
+                    list(batch.values()),
+                    now=now,
+                    provider=provider.name,
+                    model=provider.model,
+                    prompt_version=PROMPT_VERSION,
+                    examples={identity: examples.get(identity) for identity in batch},
+                    book_id=book_id,
+                )
+
+            written, stats = provider.gloss(
+                tasks, on_status=on_status, on_written=persist
             )
+            result.stats = stats
+            for identity, gloss in written.items():
+                current = by_identity.get(identity)
+                by_identity[identity] = current.merged_with(gloss) if current else gloss
 
         # Everything the Wiktionary pass settled is cached, *including the
         # lemmas it found nothing for*. Caching only the hits meant a rebuild

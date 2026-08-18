@@ -153,8 +153,21 @@ class GlossProvider(Protocol):
         tasks: Sequence[GlossTask],
         *,
         on_status: Any = None,
+        on_written: Any = None,
     ) -> tuple[dict[Identity, Gloss], GlossStats]:
-        """Gloss every task. Returns what it managed, and never raises per-lemma."""
+        """Gloss every task. Returns what it managed, and never raises per-lemma.
+
+        `on_written` is called with each batch of glosses as it arrives, before
+        the pass is finished, so the caller can persist them. Implementations
+        must still return everything at the end — the callback is an addition,
+        not a replacement.
+
+        It exists because a local pass is measured in hours. `Los de abajo` is
+        4,811 lemmas; a run that persisted only on completion lost two thousand
+        of them, and about an hour of compute, to a single interruption. Since
+        the cache is consulted before the provider is called, writing as we go
+        also makes an interrupted run resume where it stopped.
+        """
         ...
 
 

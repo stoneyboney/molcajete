@@ -682,13 +682,17 @@ class _FakeProvider:
     def describe(self) -> str:
         return f"{self.name} {self.model}"
 
-    def gloss(self, tasks, *, on_status=None):
+    def gloss(self, tasks, *, on_status=None, on_written=None):
         self.asked.extend(task.identity for task in tasks)
         glosses = {}
         for task in tasks:
             found = self.answers.get(task.identity)
             if found is not None:
                 glosses[task.identity] = found
+                # One at a time, which is the shape a real local provider has
+                # and the shape that makes an interrupted run resumable.
+                if on_written is not None:
+                    on_written({task.identity: found})
         return glosses, GlossStats(requests=1, succeeded=1, glosses_returned=len(glosses))
 
 
@@ -854,3 +858,54 @@ class TestProviderSelection:
         )
 
         assert again.asked == []
+
+    def test_an_interrupted_pass_keeps_what_it_had_finished(self, extracts, cache):
+        """A local pass over a real book is hours long and gets interrupted.
+
+        `Los de abajo` is 4,811 lemmas; a run that persisted only on completion
+        lost 2,067 finished glosses, and about an hour of compute, to a single
+        kill. Glosses are written as they arrive so that the work survives, and
+        because the cache is read before the provider is called, the next run
+        picks up where this one stopped.
+        """
+        tokens = [[[word("madriguera"), word("sierra"), word("fusil")]]]
+        lexicon = build_lexicon(tokens)
+
+        def answer(lemma):
+            return Gloss(
+                lemma=lemma, pos="NOUN", de=f"das {lemma}", en=lemma,
+                de_source=GlossSource.OLLAMA, en_source=GlossSource.OLLAMA,
+            )
+
+        answers = {(lemma, "NOUN"): answer(lemma) for lemma in
+                   ("madriguera", "sierra", "fusil")}
+
+        class DiesHalfway(_FakeProvider):
+            """Answers two lemmas, then the process goes away."""
+
+            def gloss(self, tasks, *, on_status=None, on_written=None):
+                for task in list(tasks)[:2]:
+                    self.asked.append(task.identity)
+                    on_written({task.identity: self.answers[task.identity]})
+                raise KeyboardInterrupt("lid closed")
+
+        with pytest.raises(KeyboardInterrupt):
+            gloss_lexicon(
+                lexicon, tokens, book_id="a",
+                options=GlossingOptions(
+                    extract_dir=extracts,
+                    provider=DiesHalfway("ollama", "gemma3:12b", answers),
+                ),
+                cache=cache, now=NOW,
+            )
+
+        # The two it finished are in the cache, so the retry only asks for the
+        # third — not for all three again.
+        retry = local_provider(answers)
+        gloss_lexicon(
+            lexicon, tokens, book_id="a",
+            options=GlossingOptions(extract_dir=extracts, provider=retry),
+            cache=cache, now=NOW,
+        )
+
+        assert len(retry.asked) == 1

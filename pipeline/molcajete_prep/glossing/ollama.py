@@ -360,6 +360,7 @@ class OllamaProvider:
         tasks: Sequence[GlossTask],
         *,
         on_status: Any = None,
+        on_written: Any = None,
     ) -> tuple[dict[Identity, Gloss], LocalStats]:
         stats = LocalStats()
         if not tasks:
@@ -380,6 +381,10 @@ class OllamaProvider:
                 glosses.update(answered)
                 stats.merge(chunk_stats)
                 done += 1
+                # Hand each chunk over as it lands. Hours of work should not
+                # depend on the process surviving to the end of them.
+                if on_written is not None and answered:
+                    on_written(answered)
                 if on_status is not None and (done % 10 == 0 or done == len(chunks)):
                     on_status(_progress(self.model, done, len(chunks), len(glosses)))
 
