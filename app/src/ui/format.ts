@@ -8,6 +8,8 @@ import {
   BundleFormatError,
   UnsupportedSchemaVersionError,
 } from '../domain/bundle/parseBundle'
+import { KnownFormatError } from '../domain/bundle/parseKnown'
+import { UnrecognisedFileError, type ImportOutcome } from '../app/importFile'
 
 const numbers = new Intl.NumberFormat('de-DE')
 
@@ -89,6 +91,20 @@ export interface ImportFailure {
   detail: string
 }
 
+/** What an import actually did, once it worked. */
+export function describeImportSuccess(outcome: ImportOutcome): string {
+  if (outcome.kind === 'book') {
+    return outcome.replaced
+      ? `„${outcome.title}“ ersetzt · ${chapters(outcome.chapterCount)}`
+      : `„${outcome.title}“ importiert · ${chapters(outcome.chapterCount)}`
+  }
+  if (outcome.added === 0) {
+    // Re-importing the same seed. Worth saying out loud, or it looks broken.
+    return `Nichts Neues — diese ${lemmas(outcome.inFile)} sind schon bekannt.`
+  }
+  return `${lemmas(outcome.added)} neu als bekannt markiert · ${numbers.format(outcome.total)} insgesamt`
+}
+
 /**
  * German for the user, the validator's own message underneath it. The technical
  * line stays in English and stays visible: when a bundle is rejected the next
@@ -96,6 +112,19 @@ export interface ImportFailure {
  * thing worth knowing there.
  */
 export function describeImportFailure(error: unknown): ImportFailure {
+  if (error instanceof UnrecognisedFileError) {
+    return {
+      headline: 'Diese Datei kennt die App nicht.',
+      detail:
+        'Erwartet wird ein .molcajete.json aus der Pipeline oder ein known.json aus seed_known.py.',
+    }
+  }
+  if (error instanceof KnownFormatError) {
+    return {
+      headline: 'Diese known.json ist nicht lesbar.',
+      detail: error.message,
+    }
+  }
   if (error instanceof UnsupportedSchemaVersionError) {
     return {
       headline: `Dieses Bundle hat Schemaversion ${String(error.found)}. Diese App liest Version ${error.supported}.`,

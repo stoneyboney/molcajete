@@ -1,21 +1,28 @@
 import { useCallback, useState } from 'react'
-import { importBundleFile } from '../app/importBundle'
+import { importFile, type ImportOutcome } from '../app/importFile'
 import { useRepositories } from '../app/repositories'
 import { navigate } from '../app/useRoute'
 import { useAsync } from '../app/useAsync'
 import { buildLibraryView, type LibraryView } from '../domain/view/libraryView'
-import { chapters, describeImportFailure, lemmas, words } from './format'
+import {
+  chapters,
+  describeImportFailure,
+  describeImportSuccess,
+  lemmas,
+  words,
+} from './format'
 import { ImportButton } from './ImportButton'
 import { Screen } from './Screen'
 
 export function Library() {
-  const { books } = useRepositories()
+  const { books, known } = useRepositories()
   const [reloads, setReloads] = useState(0)
   const [busy, setBusy] = useState(false)
   const [failure, setFailure] = useState<{
     headline: string
     detail: string
   } | null>(null)
+  const [done, setDone] = useState<string | null>(null)
 
   const state = useAsync<LibraryView>(
     async () => buildLibraryView(await books.listBooks()),
@@ -26,8 +33,12 @@ export function Library() {
     async (file: File) => {
       setBusy(true)
       setFailure(null)
+      setDone(null)
       try {
-        await importBundleFile(file, books)
+        const outcome: ImportOutcome = await importFile(file, { books, known })
+        setDone(describeImportSuccess(outcome))
+        // A seed changes no book row, but it changes every teach set behind
+        // them, so the reload matters either way.
         setReloads((n) => n + 1)
       } catch (error) {
         setFailure(describeImportFailure(error))
@@ -35,7 +46,7 @@ export function Library() {
         setBusy(false)
       }
     },
-    [books],
+    [books, known],
   )
 
   const remove = useCallback(
@@ -54,6 +65,12 @@ export function Library() {
         <ImportButton onFile={onFile} busy={busy} label="Buch importieren" />
       }
     >
+      {done && (
+        <p className="border-rule text-ink-muted mb-6 rounded-lg border border-dashed px-4 py-3 text-sm">
+          {done}
+        </p>
+      )}
+
       {failure && (
         <div className="border-accent/40 bg-accent/5 mb-6 rounded-lg border px-4 py-3">
           <p className="text-sm">{failure.headline}</p>
@@ -69,6 +86,11 @@ export function Library() {
           <p className="mt-2">
             Bundles entstehen auf dem Rechner und kommen per AirDrop hierher.
             Importieren, dann offline lesen.
+          </p>
+          <p className="mt-4">
+            Derselbe Knopf nimmt auch eine <span className="font-mono">known.json</span>{' '}
+            aus <span className="font-mono">seed_known.py</span> — dein Anki-Wortschatz,
+            damit dir nichts beigebracht wird, was du längst kannst.
           </p>
         </div>
       )}
