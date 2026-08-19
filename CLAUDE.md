@@ -22,7 +22,8 @@ A personal, single-user, offline-first Spanish reading app. It pre-teaches the v
 | PWA manifest `name` | `Molcajete` |
 | PWA manifest `short_name` | `Molcajete` |
 | Bundle file extension | `.molcajete.json` |
-| Python package | `molcajete_prep` |
+| Language package (separate repo) | `molcajete-prep` / `molcajete_prep` |
+| Book half (this repo, `pipeline/`) | `molcajete-book` / `molcajete_book` |
 
 Do not abbreviate to `mol`, `mc`, or `molca` anywhere user-visible. Internal variable names may shorten freely.
 
@@ -77,10 +78,14 @@ Do not relitigate these in code.
 ## Repo layout
 
 ```
-/pipeline           Python 3.11+. Prep pipeline. Runs on desktop.
-  build_bundle.py
-  seed_known.py
-  glossing/         Wiktionary + Claude batch fallback
+../molcajete-prep   A separate repo and an installable package. The language
+                    half: spaCy, the lexicon, the SPEC §5 teach rules, glossing,
+                    the Anki seed. Knows nothing about books. See its README.
+
+/pipeline           Python 3.11+. The book half. Runs on desktop.
+  build_bundle.py   shims into molcajete_book.cli
+  seed_known.py     shims into molcajete_prep.cli_seed
+  molcajete_book/   epub, bundle, schema, report, cli, trial_cli
   tests/
 /app                React + TypeScript + Vite. The PWA.
   src/
@@ -129,10 +134,53 @@ Code, comments, commit messages, and this documentation are in English.
 
 ## Current phase
 
+**The prep pipeline is now two packages.** The language half — spaCy, the
+lexicon, the SPEC §5 teach rules, glossing, the Anki seed, the gloss trial —
+lives in `../molcajete-prep`, a sibling repo and an installable package, so that
+Rocola (a Spanish song-lyrics reader) can depend on it rather than fork it. What
+stayed in `/pipeline` is the book half, renamed `molcajete_book`: the EPUB
+reader, the bundle schema, the report, the two CLIs.
+
+It was a pure move. The proof is that a `--gloss-offline` rebuild of
+`Los de abajo`, from an identical starting cache, is **byte-identical** to the
+same build from the pre-move commit, and `known.json` and `test-deck.anki.txt`
+round-trip unchanged. The 480 pipeline tests split 384/96 and none were lost.
+
+Four things could not be a pure move, and each is worth knowing:
+
+1. **The gloss cache could not keep deriving its path from `__file__`.** In
+   site-packages, `parents[2]` is inside the venv and a `uv sync` wipes it. The
+   package now defaults to `$XDG_CACHE_HOME/molcajete-prep/`; `cli.py`'s
+   `CACHE_DIR` passes `pipeline/cache/` explicitly, so this repo's cache and its
+   3 GB of extracts never moved. **`sources.py --fetch` now needs `--dir
+   cache/kaikki`** or it downloads them a second time into the home directory.
+2. **The shared test fixtures ship from the package**, as
+   `molcajete_prep.pytest_plugin`: the `nlp` and `extracts` fixtures and the two
+   autouse guards. Both suites build bundles and both need the guards; copying
+   them into a second `conftest.py` would be two copies of the thing whose job
+   is to be right everywhere.
+3. **`--gold` defaults to a list inside the package.** `gold/mexicanisms.txt`
+   was reference data about Spanish sitting in a repo about a book.
+4. **`test_seed.py` stopped reaching `make_test_deck.py` through `sys.path`**,
+   because it is a module now.
+
+`tool.uv.sources` is **not** carried in published metadata. Both pyprojects must
+declare `es-core-news-sm` *and* its GitHub wheel URL; inheriting the bare
+requirement from `molcajete-prep` resolves against PyPI and fails. That is the
+single most likely thing to bite when a third consumer appears.
+
+Still chapter-shaped inside the package, deliberately and for a later commit:
+`classify`'s `first_chapter` / `assign_to_chapters` / `ChapterVocabulary`, and
+`gloss_lexicon`'s `book_id`. Structurally those are a unit index and a cache
+scope — Rocola passes songs where Molcajete passes chapters. There is no
+`coverage` to move: it exists only in `app/src/domain/`, so Rocola needs a port
+rather than an import.
+
 **Phase 5 — Anki seed + review screen. Built and green. Not verified on the
 device yet.**
 
-`npm test` in `/app` is 197 tests; `uv run pytest` in `/pipeline` is 471. The
+`npm test` in `/app` is 197 tests; `uv run pytest` is 384 in `molcajete-prep`
+and 96 in `/pipeline`. The
 device pass now owes two phases at once — see the Phase 4 note below, which is
 still outstanding.
 
