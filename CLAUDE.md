@@ -255,10 +255,19 @@ The outstanding verification, in order:
    tomorrow.
 5. Airplane mode, then repeat. Hard constraint 1.
 
-**The one thing still needed from outside the repo** is the Anki export.
+**The seed path can be exercised without a real deck.**
+`make_test_deck.py` writes 200 of the commonest Spanish words as a synthetic
+Anki export, German in the first column so the detection has to earn its answer.
+On `Los de abajo` that takes chapter 1 from 263 cards to 211 and book coverage
+from 4.3% to **61.3%** — coverage leaps, the teach set barely moves, which is
+the closed-class rule showing through rather than a bug. The commonest words are
+function words: never taught, so seeding them removes few cards, but a large
+share of the tokens on the page, so coverage jumps. `--count 1000` reaches the
+open-class vocabulary where the cards are.
+
+A real export is still worth having when convenient —
 `File → Export → Notes in Plain Text (.txt)`, the `Spanisch::` decks. Exports
-and any `known.json` are gitignored. Until then the seed path is exercised only
-against a synthetic fixture.
+and any `known.json` are gitignored.
 
 Phase 6 is coverage display (built early, in Phase 4), reading statistics, and
 exporting mined words back to Anki as TSV. The `Add card` button in the gloss

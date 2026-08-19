@@ -109,6 +109,32 @@ uv run python seed_known.py ~/Desktop/Spanisch.txt --out known.json
 uv run python build_bundle.py "sources/Los de abajo.epub" --known known.json …
 ```
 
+### Trying it without your deck
+
+```bash
+uv run python make_test_deck.py            # writes test-deck.anki.txt
+uv run python seed_known.py test-deck.anki.txt --out known.json
+```
+
+200 of the commonest Spanish words as a synthetic export, German in the first
+column so the detection has to earn its answer. `--count` takes fewer or more.
+
+What a 200-word seed is worth, measured on `Los de abajo`:
+
+| | chapter 1 | sessions | book coverage |
+|---|---|---|---|
+| nothing seeded | 263 cards | 15 | 4.3% |
+| top-200 seed | 211 cards | 12 | **61.3%** |
+
+Coverage leaps and the teach set barely moves. That is the closed-class rule
+showing through rather than a bug: the commonest 200 Spanish words are mostly
+function words, which the teach set never contained, so seeding them removes few
+cards — but they are a large share of the *tokens* on the page, so marking them
+known moves coverage enormously. `--count 1000` reaches the open-class
+vocabulary where the cards actually are.
+
+### How the column is chosen
+
 An export is tab-separated notes with `#` headers, and the columns are whatever
 the note type has — so **which column holds the Spanish is decided by looking,
 and the working is always printed**:

@@ -184,3 +184,62 @@ class TestRoundTripIntoTheClassifier:
 
         assert results["m1"].classification is Classification.ALREADY_KNOWN
         assert results["m2"].is_teach
+
+
+class TestTheShippedTestDeck:
+    """`make_test_deck.py` exists so the seed path can be exercised without a
+    real Anki export. If it stops round-tripping, the first thing anyone tries
+    after reading the README stops working."""
+
+    def _deck(self):
+        import sys
+
+        sys.path.insert(0, str(__import__("pathlib").Path(__file__).parent.parent))
+        from make_test_deck import DECK, export_text
+
+        return DECK, export_text
+
+    def test_the_deck_has_no_duplicate_words(self):
+        DECK, _ = self._deck()
+        spanish = [word for word, _german in DECK]
+
+        assert len(set(spanish)) == len(spanish)
+
+    def test_it_holds_at_least_the_default_two_hundred(self):
+        DECK, _ = self._deck()
+
+        assert len(DECK) >= 200
+
+    def test_the_spanish_column_is_second_so_detection_has_to_work(self, anki_export):
+        # Column 0 being the target language would let a broken reader pass.
+        _DECK, export_text = self._deck()
+        rows = read_rows(export_text(20))
+
+        assert choose_field(score_fields(rows)) == 1
+
+    def test_the_german_column_is_unmistakably_not_spanish(self):
+        _DECK, export_text = self._deck()
+        scores = score_fields(read_rows(export_text(200)))
+
+        assert scores[0].ratio < 0.1
+        assert scores[1].ratio > 0.9
+
+    def test_it_seeds_the_words_it_claims_to(self, nlp):
+        _DECK, export_text = self._deck()
+        lemmas, chosen, _scores = seed_from_text(export_text(200), nlp=nlp)
+
+        assert chosen == 1
+        # Nouns are written with their article; the seed has to reduce them.
+        assert "casa" in lemmas
+        assert "hombre" in lemmas
+        # Verbs are already infinitives.
+        assert "hablar" in lemmas
+        # And no German leaked in.
+        assert "haus" not in lemmas
+        assert "der" not in lemmas
+
+    def test_asking_for_more_than_it_holds_is_an_error(self):
+        _DECK, export_text = self._deck()
+
+        with pytest.raises(SystemExit):
+            export_text(10_000)
