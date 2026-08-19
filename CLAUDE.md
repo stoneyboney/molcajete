@@ -183,6 +183,23 @@ Import `known.json`, add cross-book daily review. Success: the app stops
 teaching you words you already know. Phase 5 is also what makes the coverage
 figure honest, per the note above.
 
+`Los de abajo` makes the case concrete and urgent. Unseeded, its first chapter
+asks for **263 cards across 15 sessions** before an 820-word chapter, and the
+book totals 2,700 cards. The curve collapses — the last chapters want one
+session each — but the entry cost is the problem, and the seed is the fix.
+Note the consumer already exists: `build_bundle.py --known` reads `known.json`
+today. What is missing is `seed_known.py` to produce one, and the app-side
+import. Two of the three pieces of Phase 5 are foundations Phase 4 already laid
+(`KnownLemmaRepository`, `CardRepository`).
+
+**One inconsistency to decide on first.** `classify.py` has no closed-class
+rule, so the pipeline's baked `teachSet` and its report still teach `el`, `de`,
+`y` — the report's TOP 20 is entirely function words. The app ignores the baked
+set and recomputes (2,700 rather than 2,876), so nothing is broken, but the
+report is a diagnostic you read to judge a book and it currently describes rules
+the app does not follow. Porting the rule into `classify.py` would change the
+bundle contract; leaving it means the report stays misleading. Not decided.
+
 ---
 
 **Phase 3 — Reader shell. Complete.** Verified on the iPad: installed from the
@@ -239,8 +256,65 @@ without a device measurement that says the four measures stopped being enough.
 them; they arrive in Phase 4 with their stores and their first caller, rather
 than as empty interfaces guessing at what FSRS needs.
 
-**Phase 2 — Glosses. The fallback runs. Not declared complete; see the two open
-questions below.**
+**`Los de abajo` is built.** `bundles/azuela-los-de-abajo.molcajete.json`, 3.9 MB,
+42 chapters, 34,442 word tokens, 5,267 lexicon entries. Gitignored like every
+bundle but the fixture — it is a copyrighted edition's text.
+
+```bash
+uv run build_bundle.py "sources/Los de abajo.epub" \
+    --include-documents 'PrimeraParte*' 'SegundaParte*' 'TerceraParte*' \
+    --split-on-heading --book-id azuela-los-de-abajo --title "Los de abajo" \
+    --gloss-provider ollama          # 398 minutes, free
+```
+
+The edition is Marta Portal's, and three things in the pipeline exist because of
+it. All are in `pipeline/README.md` under **Critical editions**:
+
+1. **`--include-documents` / `--exclude-documents`.** Nine documents of
+   apparatus — notes, analysis, biography, bibliography — sit in the same spine
+   as the three of novel, ~200 KB against ~244 KB. Unfiltered they become
+   chapters called *Bibliografía* and their words inflate the `bookCount` that
+   decides what is taught.
+2. **`<sup>` is not prose.** Footnote markers extract as `federales[54]`; 101
+   paragraphs of Part I alone carry one.
+3. **Chapter titles come from the TOC fragment.** A packed part's headings are
+   bare numerals and the numbering restarts, so three chapters were called `I`
+   until `_toc_titles` learned to key on `file#fragment`.
+
+**A glossing pass now survives being interrupted.** It used to write to the
+cache once, at the end; the first run here was killed at 2,067 of 4,811 and left
+nothing. Glosses are written as each chunk lands, and since the cache is read
+before the provider is called, a re-run asks only for what is missing. Keep the
+write inside the `on_written` callback.
+
+**Do not read a rate off the progress counter in the log.** It counts chunks
+completed in memory. What has been kept is `select count(*) from glosses where
+provider='ollama'`. Measured properly: **0.19 lemmas/sec**, against 0.25 on
+`las-noches`. Both gemma3:12b on the M4 Pro; "about 0.2" is the number to plan
+with.
+
+**Phase 2 — Glosses. SPEC §12's target is met. One open question left.**
+
+`95.3%` of teach-set lemmas have a German gloss (2,741 of 2,876), against §12's
+`>95%`. On the chapter the app would actually teach first, 261 of 263 cards
+carry one.
+
+**Open question 2 is answered: it was the register, not the model.**
+
+| | las-noches (1870s, French author) | Los de abajo (1915, Mexican) |
+|---|---|---|
+| Mexicanisms | **0** in 200 book lemmas | **116** in the lexicon |
+| — of those, on teach-set lemmas | — | 46 |
+| — earning a card they would not otherwise get | — | 17 |
+| Rejected as not Spanish | 29 of 201 (14%) | 303 of 5,267 (5.8%) |
+
+`güero`, `compadre`, `nomás`, `platicar`, `ranchería`, `zacate`, `chamaco`,
+`apaste`, `tovía`, `pos`, `pa`. Given genuinely Mexican prose the model flags
+regionalisms readily, so the zero on Payno was a correct reading of archaic
+literary Spanish rather than a failure. Nothing about the prompt needed changing.
+
+**Phase 2 — Glosses. The fallback runs. Not declared complete; see the open
+question below.**
 
 The Wiktionary half runs and is cached. The model half was written against the
 Claude Batches API and could not be run — no credentials — so a local provider
@@ -277,24 +351,32 @@ What the trial measured, for comparison when Claude credentials appear:
 | Mexicanism recall, gold set asked directly | 21/26 |
 | Mexicanisms found in 200 book lemmas | 0 |
 
-**Two open questions. Neither blocks Phase 3; both block calling Phase 2 done.**
+**One open question. It does not block Phase 3 or 4; it blocks calling Phase 2
+done.**
 
-1. **It invents glosses for words that do not exist.** Of 53 zipf-0.00 lemmas
-   in the sample it rejected 25 and glossed 28. Some of those 28 are real rare
-   words (`acecinar`, `bambolear`, `bergante`); many are lemmatizer garbage
-   — `cenir`, `correspondar`, `majadeer` — that received confident, plausible,
-   invented German. It also glossed `soon` and `niente`, English and Italian
-   leaking in from Gutenberg boilerplate. The prompt forbids this explicitly and
-   nothing downstream can detect it. Unknown whether it is a local-model
-   weakness or a prompt weakness: Claude's rejection rate on the same stratum is
-   unmeasured. Run the same trial with `--provider claude` to find out.
-2. **Zero mexicanisms across 200 book lemmas, against 21/26 on the same model
-   minutes later.** The difference is the example sentence: given 1870s literary
-   prose the model reads the register as archaic rather than Mexican. That may
-   be correct for Payno and would be a serious failure on a modern Mexican
-   novel. It cannot be told apart until the pipeline is pointed at one — which
-   is a reason to keep looking for a DRM-free `Los de abajo`, or anything
-   twentieth-century.
+**It still invents glosses for words that do not exist, and at full scale it is
+worse than the sample suggested.** Of 569 zipf-0.00 lemmas in `Los de abajo`,
+**435 (76%) received a confident German gloss** — against 28 of 53 (53%) in the
+`las-noches` sample. Nothing downstream can detect one, and the prompt forbids
+it explicitly.
+
+The complication this book adds is that **zipf 0.00 is a much weaker signal here
+than it was on Payno.** Azuela transcribes rural speech, so a lemma wordfreq has
+never seen is often exactly the vocabulary worth teaching. Sorting the sample by
+hand:
+
+- *Right, and worth having*: `abotagado` "geschwollen", `acalenturado`
+  "fieberhaft", `airoplano` "das Flugzeug", `aguardentós`, `achinar`
+- *Lemmatizer artifacts given confident wrong German*: `afiladísima` — a
+  superlative adjective tagged NOUN and glossed "das Messer, die Klinge";
+  `acabólo` — `acabó` + clitic, glossed "erst"; `chapet`, `aguilita`
+- Multi-word garbage is handled correctly: 10 of them, and only 1 was glossed
+
+So the failure is real but no longer separable from success by any rule we have
+— a length filter or a zipf floor would throw away `zacate` and `chamaco` along
+with `afuerar`. **Claude's rejection rate on the same stratum is still
+unmeasured**, which is still the way to tell a local-model weakness from a
+prompt weakness. Run `gloss_trial.py --provider claude` when credentials exist.
 
 **Phase 1 — Prep pipeline skeleton. Complete.**
 
@@ -305,13 +387,13 @@ in `/pipeline`.
 
 Three things carried forward:
 
-1. **`Los de abajo` is not on Project Gutenberg.** SPEC §13.4 is wrong: Gutenberg
-   has only the 1929 English translation. The Spanish original is absent from
-   Gutenberg, Spanish Wikisource and textos.info, and the Internet Archive copies
-   are DRM-locked scans of in-copyright modern editions. Pipeline development
-   therefore used another Spanish EPUB. Drop a DRM-free `Los de abajo` into
-   `pipeline/sources/` whenever one turns up; nothing in the pipeline is
-   book-specific. See `pipeline/README.md`.
+1. **`Los de abajo` is not on Project Gutenberg — but it is now in
+   `pipeline/sources/` and built.** SPEC §13.4 is still wrong and someone will
+   follow it: Gutenberg has only the 1929 English translation, and the Spanish
+   original is absent from Gutenberg, Spanish Wikisource and textos.info while
+   the Internet Archive copies are DRM-locked scans of in-copyright editions.
+   A DRM-free Marta Portal edition has since turned up; see the Phase 2 section
+   above for the invocation, which needs the document filter.
 2. **The §5 `zipf >= 3.5` rule teaches function words.** Unseeded, the top of
    every teach set is `el`, `de`, `y`, `que`. SPEC §8 anticipates this and
    answers it with Anki seeding in Phase 5 — but if Phase 4 arrives first, the
