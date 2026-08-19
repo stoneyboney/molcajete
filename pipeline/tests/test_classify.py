@@ -10,6 +10,7 @@ from __future__ import annotations
 import pytest
 
 from molcajete_prep.classify import (
+    CLOSED_CLASS_POS,
     ChapterVocabulary,
     Classification,
     ClassificationOptions,
@@ -86,6 +87,69 @@ class TestStep2Rules:
         assert result.reason is None
 
 
+class TestClosedClass:
+    """Function words are never taught, however common they are.
+
+    Not in SPEC §5. Without it the top of every teach set is `el`, `de`, `y`,
+    `que` — 16 of the first 18 cards of a real book — because `zipf >= 3.5`
+    catches every function word and `bookCount` sorts them first. The same list
+    is in `app/src/domain/teachSet.ts`; the two must not drift.
+    """
+
+    @pytest.mark.parametrize(
+        ("lemma", "pos"),
+        [
+            ("el", "DET"),
+            ("de", "ADP"),
+            ("él", "PRON"),
+            ("y", "CCONJ"),
+            ("que", "SCONJ"),
+            ("ser", "AUX"),
+            ("dos", "NUM"),
+        ],
+    )
+    def test_a_function_word_is_never_taught(self, lemma, pos):
+        # Given every reason to teach it: met thousands of times, and among the
+        # most common words in the language.
+        result = classify_lemma(
+            entry(lemma=lemma, pos=pos, zipf=7.4, book_count=8691), is_known=False
+        )
+
+        assert result.classification is Classification.SKIPPED_CLOSED_CLASS
+        assert not result.is_teach
+
+    def test_an_interjection_is_still_taught(self):
+        # `¡órale!` is exactly the vocabulary this project exists for.
+        assert "INTJ" not in CLOSED_CLASS_POS
+        result = classify_lemma(
+            entry(lemma="órale", pos="INTJ", book_count=4), is_known=False
+        )
+
+        assert result.is_teach
+
+    def test_a_function_word_is_still_glossed(self):
+        # The rule is about cards, not about the reader. `el` keeps its lexicon
+        # entry and its dotted underline.
+        chapters = assign_to_chapters(
+            {"m1": entry(lemma="el", pos="DET", zipf=7.45, book_count=8691)},
+            [frozenset({"m1"})],
+        )
+
+        assert chapters[0].teach == ()
+        assert chapters[0].gloss_only == ("m1",)
+
+    def test_the_rule_is_configurable(self):
+        options = ClassificationOptions(closed_class_pos=frozenset())
+
+        result = classify_lemma(
+            entry(lemma="el", pos="DET", zipf=7.45, book_count=8691),
+            is_known=False,
+            options=options,
+        )
+
+        assert result.is_teach
+
+
 class TestRuleOrdering:
     def test_proper_nouns_beat_the_book_count_rule(self):
         """The reason PROPN is checked first.
@@ -103,6 +167,23 @@ class TestRuleOrdering:
 
     def test_proper_nouns_are_skipped_whether_or_not_they_are_known(self):
         result = classify_lemma(entry(pos="PROPN"), is_known=True)
+
+        assert result.classification is Classification.SKIPPED_PROPER_NOUN
+
+    def test_closed_class_beats_the_book_count_rule(self):
+        # Same trap as PROPN: read §5 top-down and `el` is taught 8,691 times
+        # over before anything gets a chance to skip it.
+        result = classify_lemma(
+            entry(lemma="el", pos="DET", zipf=7.45, book_count=8691), is_known=False
+        )
+
+        assert result.classification is Classification.SKIPPED_CLOSED_CLASS
+        assert result.reason is None
+
+    def test_proper_nouns_are_checked_before_closed_class(self):
+        # Only observable if a tagger ever emits both; pinned so the two skips
+        # keep a defined order across the three implementations.
+        result = classify_lemma(entry(lemma="él", pos="PROPN"), is_known=False)
 
         assert result.classification is Classification.SKIPPED_PROPER_NOUN
 

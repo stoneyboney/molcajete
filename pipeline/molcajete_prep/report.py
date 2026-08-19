@@ -237,6 +237,17 @@ def render_report(
     lines.append(_row("Teach", counts[Classification.TEACH], total_lemmas))
     lines.append(_row("Gloss only", counts[Classification.GLOSS_ONLY], total_lemmas))
     lines.append(_row("Skipped (PROPN)", proper_nouns, total_lemmas))
+    if counts[Classification.SKIPPED_CLOSED_CLASS]:
+        # Function words. Glossed like anything else, never taught: a card does
+        # not teach `de`. Reported because without the line the counts do not
+        # sum and the number looks like a bug.
+        lines.append(
+            _row(
+                "Skipped (closed class)",
+                counts[Classification.SKIPPED_CLOSED_CLASS],
+                total_lemmas,
+            )
+        )
     if counts[Classification.ALREADY_KNOWN]:
         lines.append(
             _row("Already known", counts[Classification.ALREADY_KNOWN], total_lemmas)
