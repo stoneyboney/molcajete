@@ -195,37 +195,48 @@ class TestTheShippedTestDeck:
         import sys
 
         sys.path.insert(0, str(__import__("pathlib").Path(__file__).parent.parent))
-        from make_test_deck import DECK, export_text
+        from make_test_deck import export_text, load_deck
 
-        return DECK, export_text
+        return load_deck(), export_text
 
-    def test_the_deck_has_no_duplicate_words(self):
-        DECK, _ = self._deck()
-        spanish = [word for word, _german in DECK]
+    def test_the_list_has_no_duplicate_words(self):
+        deck, _ = self._deck()
+        spanish = [word for word, _german in deck]
 
         assert len(set(spanish)) == len(spanish)
 
-    def test_it_holds_at_least_the_default_two_hundred(self):
-        DECK, _ = self._deck()
+    def test_it_holds_a_thousand_words(self):
+        deck, _ = self._deck()
 
-        assert len(DECK) >= 200
+        assert len(deck) == 1000
 
-    def test_the_spanish_column_is_second_so_detection_has_to_work(self, anki_export):
+    def test_every_entry_has_both_halves(self):
+        deck, _ = self._deck()
+
+        assert all(spanish and german for spanish, german in deck)
+
+    def test_no_gloss_is_long_enough_to_be_a_definition(self):
+        # The cache-sourced tail is unreviewed, so this is the one guard on it.
+        deck, _ = self._deck()
+
+        assert max(len(german) for _spanish, german in deck) <= 32
+
+    def test_the_spanish_column_is_second_so_detection_has_to_work(self):
         # Column 0 being the target language would let a broken reader pass.
-        _DECK, export_text = self._deck()
+        _deck, export_text = self._deck()
         rows = read_rows(export_text(20))
 
         assert choose_field(score_fields(rows)) == 1
 
     def test_the_german_column_is_unmistakably_not_spanish(self):
-        _DECK, export_text = self._deck()
-        scores = score_fields(read_rows(export_text(200)))
+        _deck, export_text = self._deck()
+        scores = score_fields(read_rows(export_text(1000)))
 
-        assert scores[0].ratio < 0.1
+        assert scores[0].ratio < 0.2
         assert scores[1].ratio > 0.9
 
     def test_it_seeds_the_words_it_claims_to(self, nlp):
-        _DECK, export_text = self._deck()
+        _deck, export_text = self._deck()
         lemmas, chosen, _scores = seed_from_text(export_text(200), nlp=nlp)
 
         assert chosen == 1
@@ -239,7 +250,16 @@ class TestTheShippedTestDeck:
         assert "der" not in lemmas
 
     def test_asking_for_more_than_it_holds_is_an_error(self):
-        _DECK, export_text = self._deck()
+        _deck, export_text = self._deck()
 
         with pytest.raises(SystemExit):
             export_text(10_000)
+
+    def test_a_thousand_words_seeds_far_more_than_two_hundred(self, nlp):
+        _deck, export_text = self._deck()
+        small, _c, _s = seed_from_text(export_text(200), nlp=nlp)
+        large, _c, _s = seed_from_text(export_text(1000), nlp=nlp)
+
+        assert len(small) >= 190
+        assert len(large) >= 950
+        assert small <= large

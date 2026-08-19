@@ -112,26 +112,34 @@ uv run python build_bundle.py "sources/Los de abajo.epub" --known known.json …
 ### Trying it without your deck
 
 ```bash
-uv run python make_test_deck.py            # writes test-deck.anki.txt
+uv run python make_test_deck.py --count 1000   # writes test-deck.anki.txt
 uv run python seed_known.py test-deck.anki.txt --out known.json
 ```
 
-200 of the commonest Spanish words as a synthetic export, German in the first
-column so the detection has to earn its answer. `--count` takes fewer or more.
+The commonest Spanish words as a synthetic export, German in the first column so
+the detection has to earn its answer. `--count` takes 1 to 1000.
 
-What a 200-word seed is worth, measured on `Los de abajo`:
+What it is worth, measured on `Los de abajo`:
 
-| | chapter 1 | sessions | book coverage |
-|---|---|---|---|
-| nothing seeded | 263 cards | 15 | 4.3% |
-| top-200 seed | 211 cards | 12 | **61.3%** |
+| | chapter 1 | sessions | whole book | coverage |
+|---|---|---|---|---|
+| nothing seeded | 263 cards | 15 | 2,717 | 4.3% |
+| top 200 | 211 cards | 12 | 2,553 | 61.3% |
+| top 1000 | **129 cards** | **8** | **1,814** | **75.7%** |
 
-Coverage leaps and the teach set barely moves. That is the closed-class rule
-showing through rather than a bug: the commonest 200 Spanish words are mostly
-function words, which the teach set never contained, so seeding them removes few
-cards — but they are a large share of the *tokens* on the page, so marking them
-known moves coverage enormously. `--count 1000` reaches the open-class
-vocabulary where the cards actually are.
+The two seeds do different jobs, and the difference is the point. At 200,
+coverage leaps and the teach set barely moves — the commonest words are function
+words, which the teach set never contained, so seeding them removes few cards
+while covering a large share of the *tokens* on the page. At 1000 the open-class
+vocabulary starts coming out and the cards go with it: chapter 1 halves, and 900
+cards leave the book.
+
+The word list is `data/test-deck-es-de.tsv`, committed so the counts above are
+the same for everyone. Its third column says where each German gloss came from:
+the first 244 were written or corrected by hand, the rest are the pipeline's own
+gloss cache and are **unreviewed**. That tail is there so the column detection
+has something to discriminate against — `seed_known.py` reads only the Spanish —
+and it is not a deck to study from.
 
 ### How the column is chosen
 
