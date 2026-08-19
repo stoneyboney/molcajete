@@ -140,17 +140,21 @@ Segment numbers are never persisted. Finishing a session gives its words cards,
 which removes them from the next selection, so the next session is always
 segment 0 of what is left.
 
-## Coverage understates readability until Phase 5
+## Coverage understates readability without a seed
 
 Learning every word the fixture's chapter 1 will ever teach reaches 20 of its 35
 word tokens — a ceiling of **57%**. The missing 15 are `el`×7, `su`×2, `de`,
 `y`, `por`, `entre`, `desde`: closed-class words the teach set deliberately
 never contains, so they never become known, so they never count as covered.
 
-This is not a bug and the fix is not to teach `el`. SPEC §8's Anki seed lands in
-Phase 5 and marks the function words known in one pass. Until then the 0.90
-warning fires on every book, and it is the warning that is premature rather than
-the arithmetic. There is a test pinning the ceiling and the explanation.
+This is not a bug and the fix is not to teach `el`. It is to import a
+`known.json`, which marks the function words known in one pass — that is what
+the seed is *for*, beyond saving you the cards. There is a test pinning the
+ceiling and the explanation.
+
+Unseeded, `Los de abajo` shows the same shape at scale: 263 cards for its first
+chapter, 4.3% coverage across the book. With a top-5k vocabulary marked known
+that becomes 62 cards and 83%.
 
 ## The seed and the review screen
 

@@ -129,6 +129,67 @@ Code, comments, commit messages, and this documentation are in English.
 
 ## Current phase
 
+**Phase 5 — Anki seed + review screen. Built and green. Not verified on the
+device yet.**
+
+`npm test` in `/app` is 197 tests; `uv run pytest` in `/pipeline` is 471. The
+device pass now owes two phases at once — see the Phase 4 note below, which is
+still outstanding.
+
+Three things landed:
+
+1. **`seed_known.py`** turns an Anki `Notes in Plain Text` export into the
+   `known.json` that `build_bundle.py --known` and the app both already read.
+   Which column holds the Spanish depends on the note type, so it is chosen by
+   **looking** and the working is always printed. The test is comparative —
+   is a word *more* Spanish than it is German or English — because "has Spanish
+   ever seen this word" says yes to most German too (*Hund* scores 1.67 in
+   Spanish) and scored a German column at 83%. Single characters are excluded or
+   a column of `A1` deck tags wins on the `a`.
+2. **One import button, two kinds of file.** It cannot narrow `accept` past
+   `.json` on iOS, so `importFile.ts` dispatches on shape: an object is a
+   bundle, an array is a seed. Nothing depends on the filename.
+3. **The review screen** at `#/wiederholen`, cross-book, with a library chip
+   that appears only when something is due. Dexie v3 indexes `card.fsrs.due`.
+
+**A card carries its own face.** `SrsCard.face` holds the gloss, example and
+region note, copied on at creation. The review screen is cross-book and
+`deleteBook` leaves cards alone, so a due lemma may come from a book that is no
+longer imported — resolving the gloss back through a bundle would undo the thing
+`CardRepository` exists to guarantee. Cards made before this fall back to the
+lemma alone.
+
+**A review persists no session state, deliberately.** A teaching session is
+written after every answer because losing it means re-teaching. A review has
+nothing worth keeping: the card is the durable part and resuming is just asking
+what is still due.
+
+Two FSRS facts that cost a test each, now written down: a card graded `Nochmal`
+is *not* due at the same instant — FSRS puts it a learning step out — and a new
+card graded `Gut` is due again in **ten minutes**, not days, because first
+exposures are still walking the learning steps (`Nochmal` 1m, `Schwer` 6m, `Gut`
+10m, `Leicht` 8 days).
+
+**What the seed is worth, measured on `Los de abajo`:**
+
+| known through | chapter 1 | sessions | book coverage |
+|---|---|---|---|
+| nothing | 263 cards | 15 | 4.3% |
+| zipf ≥ 5.0 (top ~1k) | 169 | 10 | 68.1% |
+| zipf ≥ 4.0 (top ~5k) | **62** | **4** | 83.3% |
+| zipf ≥ 3.5 (top ~10k) | 31 | 2 | 88.1% |
+
+Even knowing everything down to zipf 3.5 sits just under SPEC's 0.90 line,
+because what remains is the dialect vocabulary the book exists to teach.
+
+**`classify.py` now carries the closed-class rule too.** It was in the
+TypeScript only, so the pipeline's report headed its teach list with `el, de,
+y` and claimed 2,876 teach lemmas where the app computed 2,700. Both now say
+**2,717**. The rule is pure — it reads only `pos` — so it belongs in all three
+implementations; the *other* divergence stays and is documented in the module
+docstring, because `teachSet.ts` teaching a lemma where it occurs rather than at
+`firstChapter` depends on a card store the pipeline does not have.
+
 **Phase 4 — Teaching loop. Built and green. Not verified on the device yet.**
 
 `npm test` in `/app` is 167 tests across 11 files. The domain layer went in
@@ -178,27 +239,30 @@ this by teaching `el`.** There is a test pinning the ceiling.
 **Windowing is still not built and still not needed.** Nothing in Phase 4 adds a
 span per token.
 
-**Next: Phase 5 — Anki seed + review screen.**
-Import `known.json`, add cross-book daily review. Success: the app stops
-teaching you words you already know. Phase 5 is also what makes the coverage
-figure honest, per the note above.
+**Next: Phase 6 — Polish**, and before it, a device pass that is now two
+phases behind.
 
-`Los de abajo` makes the case concrete and urgent. Unseeded, its first chapter
-asks for **263 cards across 15 sessions** before an 820-word chapter, and the
-book totals 2,700 cards. The curve collapses — the last chapters want one
-session each — but the entry cost is the problem, and the seed is the fix.
-Note the consumer already exists: `build_bundle.py --known` reads `known.json`
-today. What is missing is `seed_known.py` to produce one, and the app-side
-import. Two of the three pieces of Phase 5 are foundations Phase 4 already laid
-(`KnownLemmaRepository`, `CardRepository`).
+The outstanding verification, in order:
 
-**One inconsistency to decide on first.** `classify.py` has no closed-class
-rule, so the pipeline's baked `teachSet` and its report still teach `el`, `de`,
-`y` — the report's TOP 20 is entirely function words. The app ignores the baked
-set and recomputes (2,700 rather than 2,876), so nothing is broken, but the
-report is a diagnostic you read to judge a book and it currently describes rules
-the app does not follow. Porting the rule into `classify.py` would change the
-bundle contract; leaving it means the report stays misleading. Not decided.
+1. Import a bundle and a `known.json` on the iPad. Both go through the same
+   button; the seed should report how many lemmas were new.
+2. Open `Los de abajo` and check chapter 1 is a handful of cards rather than
+   263 — the number depends on your deck, and the table above says where you
+   should land.
+3. Run a session, kill the tab mid-recall, confirm it resumes on the same card.
+4. Grade some cards and check `Wiederholen` offers them when due. Remember the
+   learning steps: a card answered `Gut` today is due again in ten minutes, not
+   tomorrow.
+5. Airplane mode, then repeat. Hard constraint 1.
+
+**The one thing still needed from outside the repo** is the Anki export.
+`File → Export → Notes in Plain Text (.txt)`, the `Spanisch::` decks. Exports
+and any `known.json` are gitignored. Until then the seed path is exercised only
+against a synthetic fixture.
+
+Phase 6 is coverage display (built early, in Phase 4), reading statistics, and
+exporting mined words back to Anki as TSV. The `Add card` button in the gloss
+sheet (SPEC §6.4) also belongs there — it is the only §6 item still missing.
 
 ---
 
