@@ -97,6 +97,39 @@ Local-model flags — `--gloss-concurrency` (default 2), `--gloss-retries`
 (default 1), `--gloss-chunk` (default 1 locally, 25 for Claude) — are described
 under **Running a local model** below.
 
+## Seeding what you already know
+
+Without a seed the app teaches you *tener* and *más*: unseeded, the first
+chapter of `Los de abajo` asks for 263 cards across 15 sessions. SPEC §8 answers
+that with your Anki collection.
+
+```bash
+# Anki: File -> Export -> Notes in Plain Text (.txt), your Spanisch:: decks
+uv run python seed_known.py ~/Desktop/Spanisch.txt --out known.json
+uv run python build_bundle.py "sources/Los de abajo.epub" --known known.json …
+```
+
+An export is tab-separated notes with `#` headers, and the columns are whatever
+the note type has — so **which column holds the Spanish is decided by looking,
+and the working is always printed**:
+
+```
+Columns, by how Spanish they look:
+  [0]    6% of    18 words   der Hund · die Katze · laufen
+  [1]  100% of    17 words   el perro · el gato · correr <- chosen
+  [2]    0% of     0 words   A1 · A1 · A1
+```
+
+The test is comparative — is a word *more* Spanish than it is German or English
+— because "has Spanish ever seen this" says yes to most German too (*Hund*
+scores 1.67 in Spanish). `--field N` overrides the guess, `--dry-run` writes
+nothing, and `--merge` unions with an existing `known.json` so it stays
+re-runnable as the deck grows.
+
+Getting the column wrong is worth catching, which is why it prints: a lemma
+marked known is never taught **and** counts as covered, so a German seed would
+quietly skip words you actually need.
+
 ## Critical editions
 
 A scholarly edition carries an introduction, endnotes, an analysis, a biography

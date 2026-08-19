@@ -8,6 +8,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).parent / "fixtures"))
 
 from fixture_book import CHAPTERS, build_fixture_epub  # noqa: E402
+from fixture_anki import export_text  # noqa: E402
 from fixture_critical_edition import build_critical_edition_epub  # noqa: E402
 
 
@@ -23,6 +24,12 @@ def critical_edition_epub(tmp_path_factory: pytest.TempPathFactory) -> Path:
     return build_critical_edition_epub(
         tmp_path_factory.mktemp("epub") / "critical-edition.epub"
     )
+
+
+@pytest.fixture(scope="session")
+def anki_export() -> str:
+    """A synthetic Anki plain-text export, Spanish in the second column."""
+    return export_text()
 
 
 @pytest.fixture(scope="session")
