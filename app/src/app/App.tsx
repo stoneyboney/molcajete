@@ -1,6 +1,7 @@
 import { ChapterList } from '../ui/ChapterList'
 import { Library } from '../ui/Library'
 import { Reader } from '../ui/Reader'
+import { Review } from '../ui/Review'
 import { TeachingSession } from '../ui/TeachingSession'
 import { useRoute } from './useRoute'
 
@@ -10,6 +11,8 @@ export function App() {
   switch (route.name) {
     case 'library':
       return <Library />
+    case 'review':
+      return <Review />
     case 'chapters':
       return <ChapterList bookId={route.bookId} />
     case 'reader':

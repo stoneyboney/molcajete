@@ -46,6 +46,7 @@ import {
   gradeCard,
   isPassingGrade,
   newCard,
+  type CardFace,
   type ReviewGrade,
   type SrsCard,
 } from '../srs/scheduler'
@@ -61,6 +62,11 @@ export interface SessionCard {
   lemmaId: LemmaId
   /** Set once the card has been through the introduction phase. */
   introduced: boolean
+  /**
+   * Copied onto the FSRS card when one is created, so the cross-book review
+   * screen can render it without the book. See `CardFace`.
+   */
+  face?: CardFace
 }
 
 export interface TeachingSession {
@@ -98,6 +104,7 @@ export interface SessionStep {
 export interface SessionCardInput {
   key: LemmaKey
   lemmaId: LemmaId
+  face?: CardFace
 }
 
 export function startSession(
@@ -171,7 +178,7 @@ export function grade(
 
   // A word can already have a card from an earlier session in another chapter
   // — the schedule continues rather than restarting.
-  const before = existing ?? newCard(card.lemmaId, now)
+  const before = existing ?? newCard(card.lemmaId, now, card.face)
   const after = gradeCard(before, reviewGrade, now)
   const effects: SessionEffect[] = [{ kind: 'saveCard', card: after }]
 

@@ -32,5 +32,17 @@ export interface CardRepository {
    */
   listCardedLemmas(): Promise<Set<LemmaId>>
 
+  /**
+   * Cards due at or before `now`, soonest first. SPEC §6.5's whole selection.
+   *
+   * Cross-book by construction, like everything else here. `limit` exists
+   * because a neglected week can leave hundreds due and a screen that offers
+   * all of them at once is a screen you close.
+   */
+  listDue(now: Date, limit?: number): Promise<SrsCard[]>
+
+  /** How many are due, without reading their schedules. For the library chip. */
+  countDue(now: Date): Promise<number>
+
   put(card: SrsCard): Promise<void>
 }

@@ -54,6 +54,31 @@ const RATINGS: Record<ReviewGrade, Grade> = {
 }
 
 /**
+ * Everything needed to show a card, carried on the card itself.
+ *
+ * The review screen (SPEC §6.5) is cross-book, and a lemma due today may have
+ * been learned in a book that has since been deleted — `CardRepository` is
+ * book-agnostic on purpose and `deleteBook` deliberately leaves cards alone.
+ * Resolving the gloss back through some book at review time would undo that:
+ * the card would depend on a bundle still being imported.
+ *
+ * So the face is copied onto the card when it is created. It costs a few dozen
+ * bytes and makes a card self-contained, which is what "cards are global" has
+ * to mean if it means anything.
+ *
+ * Optional because cards created before this existed do not have one; the
+ * review screen falls back to showing the lemma alone.
+ */
+export interface CardFace {
+  pos: string
+  de: string | null
+  en: string | null
+  example: string | null
+  regionNote: string | null
+  mexicanism: boolean
+}
+
+/**
  * A card as this app stores it: the global lemma it teaches, plus the *entire*
  * FSRS card object.
  *
@@ -66,6 +91,8 @@ export interface SrsCard {
   lemmaId: LemmaId
   fsrs: FsrsCard
   createdAt: Date
+  /** See `CardFace`. Absent on cards created before Phase 5. */
+  face?: CardFace
 }
 
 /** SPEC §7: known once the card is in review and stable for more than 21 days. */
@@ -84,11 +111,12 @@ const parameters = generatorParameters({
 
 const scheduler = fsrs(parameters)
 
-export function newCard(lemmaId: LemmaId, now: Date): SrsCard {
+export function newCard(lemmaId: LemmaId, now: Date, face?: CardFace): SrsCard {
   return {
     lemmaId,
     fsrs: createEmptyCard(now),
     createdAt: now,
+    ...(face ? { face } : {}),
   }
 }
 
@@ -120,7 +148,12 @@ export function isKnown(
   )
 }
 
-/** When this card next wants to be seen. Phase 5's review screen reads it. */
+/** Whether this card is due at `now`. The review screen's whole selection rule. */
+export function isDue(card: SrsCard, now: Date): boolean {
+  return card.fsrs.due.getTime() <= now.getTime()
+}
+
+/** When this card next wants to be seen. The review screen reads it. */
 export function dueAt(card: SrsCard): Date {
   return card.fsrs.due
 }

@@ -152,10 +152,35 @@ Phase 5 and marks the function words known in one pass. Until then the 0.90
 warning fires on every book, and it is the warning that is premature rather than
 the arithmetic. There is a test pinning the ceiling and the explanation.
 
+## The seed and the review screen
+
+**One import button, two kinds of file.** It cannot narrow its `accept` past
+`.json` — iOS matches that against the system's idea of a file type and a double
+extension is not one — so `importFile.ts` dispatches on *shape*: an object is a
+bundle, an array is a `known.json`. Nothing depends on the filename, which is
+what makes AirDrop renaming harmless.
+
+**A card carries its own face.** `SrsCard.face` holds the gloss, the example and
+the region note, copied on at creation. The review screen is cross-book and
+`deleteBook` deliberately leaves cards alone, so a lemma due today may come from
+a book that is no longer imported — resolving the gloss back through a bundle
+would undo the whole point of cards being global. Cards made before Phase 5 have
+no face and fall back to showing the lemma alone.
+
+**A review keeps no session state, on purpose.** A teaching session is persisted
+after every answer because losing it means re-teaching. A review has nothing
+worth keeping: every answer writes the card, and resuming is just asking what is
+still due. A card graded `Gut` is not due; one graded `Nochmal` is.
+
+Worth knowing when reading the tests: first exposures are still inside FSRS's
+learning steps, so the intervals are minutes rather than days — `Nochmal` 1m,
+`Schwer` 6m, `Gut` 10m, `Leicht` 8 days. A card answered `Gut` this morning is
+genuinely due again this morning. That is the learning phase working.
+
 ## What is not here yet
 
-Phase 4 is the teaching loop. The cross-book review screen (§6.5), the `Add
-card` button in the gloss sheet (§6.4) and Anki seeding (§8) are Phases 5–6.
+The `Add card` button in the gloss sheet (§6.4) is Phase 6, along with reading
+statistics and the Anki TSV export.
 
 The Dexie implementations are exercised by the type checker and by hand, not by
 the test suite: `tests/teachingLoop.test.ts` runs the flow over in-memory ports

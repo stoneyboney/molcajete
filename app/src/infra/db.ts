@@ -123,6 +123,15 @@ export class MolcajeteDatabase extends Dexie {
       cards: 'lemmaId',
       knownLemmas: 'lemmaId',
     })
+    // Phase 5. The review screen asks "what is due?" of every card there is, so
+    // that question needs an index rather than a full scan. The key path reaches
+    // into the stored FSRS object, which is where `due` lives and where it has
+    // to stay — CLAUDE.md requires the whole card object, not a copy of one
+    // field beside it. Dexie builds the index from the existing rows, so there
+    // is no upgrade function here either.
+    this.version(3).stores({
+      cards: 'lemmaId, card.fsrs.due',
+    })
   }
 }
 

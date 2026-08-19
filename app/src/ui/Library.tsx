@@ -6,6 +6,7 @@ import { useAsync } from '../app/useAsync'
 import { buildLibraryView, type LibraryView } from '../domain/view/libraryView'
 import {
   chapters,
+  dueCards,
   describeImportFailure,
   describeImportSuccess,
   lemmas,
@@ -15,7 +16,7 @@ import { ImportButton } from './ImportButton'
 import { Screen } from './Screen'
 
 export function Library() {
-  const { books, known } = useRepositories()
+  const { books, known, cards, clock } = useRepositories()
   const [reloads, setReloads] = useState(0)
   const [busy, setBusy] = useState(false)
   const [failure, setFailure] = useState<{
@@ -28,6 +29,10 @@ export function Library() {
     async () => buildLibraryView(await books.listBooks()),
     [books, reloads],
   )
+
+  // SPEC §6.5. No chip when nothing is due — the app does not nag, and a zero
+  // is not a thing worth drawing.
+  const due = useAsync(() => cards.countDue(clock.now()), [cards, clock, reloads])
 
   const onFile = useCallback(
     async (file: File) => {
@@ -65,6 +70,17 @@ export function Library() {
         <ImportButton onFile={onFile} busy={busy} label="Buch importieren" />
       }
     >
+      {due.status === 'ready' && dueCards(due.value) && (
+        <button
+          type="button"
+          onClick={() => navigate({ name: 'review' })}
+          className="border-rule mb-6 flex w-full items-center justify-between rounded-lg border px-4 py-3 text-left"
+        >
+          <span className="text-sm">{dueCards(due.value)}</span>
+          <span className="text-accent text-sm">Wiederholen ›</span>
+        </button>
+      )}
+
       {done && (
         <p className="border-rule text-ink-muted mb-6 rounded-lg border border-dashed px-4 py-3 text-sm">
           {done}

@@ -53,6 +53,11 @@ export const GRADE_LABELS = {
   easy: 'Leicht',
 } as const
 
+/** The library's due chip. Null when nothing is due — no chip, no nagging. */
+export function dueCards(count: number): string | null {
+  return count === 0 ? null : `${cards(count)} fällig`
+}
+
 export function sessionProgress(answered: number, total: number): string {
   return `${numbers.format(answered)} von ${numbers.format(total)}`
 }

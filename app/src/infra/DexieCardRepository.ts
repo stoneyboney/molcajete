@@ -35,6 +35,20 @@ export class DexieCardRepository implements CardRepository {
     return new Set(keys)
   }
 
+  async listDue(now: Date, limit?: number): Promise<SrsCard[]> {
+    // Soonest first, so a capped review starts with what is most overdue.
+    let query = this.database.cards
+      .where('card.fsrs.due')
+      .belowOrEqual(now)
+      .limit(limit ?? Infinity)
+    const rows = await query.sortBy('card.fsrs.due')
+    return rows.map((row) => row.card)
+  }
+
+  async countDue(now: Date): Promise<number> {
+    return this.database.cards.where('card.fsrs.due').belowOrEqual(now).count()
+  }
+
   async put(card: SrsCard): Promise<void> {
     await this.database.cards.put({ lemmaId: card.lemmaId, card })
   }

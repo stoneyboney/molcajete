@@ -221,6 +221,7 @@ describe('routes', () => {
       bookId: 'anonimo-los-del-cerro',
       chapterIndex: 2,
     }],
+    ['#/wiederholen', { name: 'review' }],
   ]
 
   it.each(cases)('parses %s', (hash, route) => {

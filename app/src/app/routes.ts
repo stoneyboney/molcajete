@@ -9,6 +9,9 @@
 
 export type Route =
   | { name: 'library' }
+  /** SPEC §6.5: due cards across every book. Carries nothing — what is due
+   * is a question about the clock, asked on arrival. */
+  | { name: 'review' }
   | { name: 'chapters'; bookId: string }
   | { name: 'reader'; bookId: string; chapterIndex: number }
   /**
@@ -25,6 +28,7 @@ export const LIBRARY: Route = { name: 'library' }
 export function parseRoute(hash: string): Route {
   const path = hash.replace(/^#\/?/, '')
   if (path === '') return LIBRARY
+  if (path === 'wiederholen') return { name: 'review' }
 
   const parts = path.split('/').map(decodeURIComponent)
 
@@ -49,6 +53,8 @@ export function routeToHash(route: Route): string {
   switch (route.name) {
     case 'library':
       return '#/'
+    case 'review':
+      return '#/wiederholen'
     case 'chapters':
       return `#/book/${encodeURIComponent(route.bookId)}`
     case 'reader':

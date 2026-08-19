@@ -93,10 +93,23 @@ export async function loadSession(
     lexicon,
   )
 
-  const cards = (segment?.teachSet ?? []).map((key) => ({
-    key,
-    lemmaId: lemmaId(lexicon.get(key)!),
-  }))
+  // The face travels with the card so the cross-book review screen can render
+  // it after this book has been deleted. See `CardFace`.
+  const cards = (segment?.teachSet ?? []).map((key) => {
+    const entry = lexicon.get(key)!
+    return {
+      key,
+      lemmaId: lemmaId(entry),
+      face: {
+        pos: entry.pos,
+        de: entry.de ?? null,
+        en: entry.en ?? null,
+        example: entry.example?.es ?? null,
+        regionNote: entry.regionNote ?? null,
+        mexicanism: entry.mexicanism,
+      },
+    }
+  })
 
   return {
     session: startSession(bookId, chapterIndex, cards, now),
