@@ -8,8 +8,12 @@ import pytest
 sys.path.insert(0, str(Path(__file__).parent / "fixtures"))
 
 from fixture_book import CHAPTERS, build_fixture_epub  # noqa: E402
-from fixture_anki import export_text  # noqa: E402
 from fixture_critical_edition import build_critical_edition_epub  # noqa: E402
+
+# `nlp`, `no_real_extracts` and `no_shared_cache` are not here. They come from
+# molcajete-prep's pytest plugin, because a suite that builds bundles needs
+# exactly the same guards this package's own suite does and two copies of a
+# guard is one copy too many. See `molcajete_prep/pytest_plugin.py`.
 
 
 @pytest.fixture(scope="session")
@@ -27,49 +31,6 @@ def critical_edition_epub(tmp_path_factory: pytest.TempPathFactory) -> Path:
 
 
 @pytest.fixture(scope="session")
-def anki_export() -> str:
-    """A synthetic Anki plain-text export, Spanish in the second column."""
-    return export_text()
-
-
-@pytest.fixture(scope="session")
 def fixture_chapters() -> list[tuple[str, list[str]]]:
     """The prose that went into the fixture, for round-trip assertions."""
     return CHAPTERS
-
-
-@pytest.fixture(scope="session")
-def nlp():
-    """The loaded spaCy pipeline. Session-scoped: loading it costs a second."""
-    from molcajete_prep.nlp import load_pipeline
-
-    return load_pipeline()
-
-
-@pytest.fixture(autouse=True)
-def no_real_extracts(monkeypatch):
-    """Point the glossing pass at a directory that does not exist.
-
-    Without this, any test that builds a bundle without saying `gloss=False`
-    streams the 22.9 GB English Wiktionary dump — a minute per test, silently,
-    and only on machines that happen to have downloaded it. A path that cannot
-    exist turns that into an immediate, explicit SourceUnavailableError.
-
-    Deliberately not under `tmp_path`: several tests assert their `tmp_path` is
-    empty, and a stray directory there would fail them for the wrong reason.
-    """
-    from molcajete_prep.glossing import pipeline
-
-    monkeypatch.setattr(
-        pipeline, "DEFAULT_EXTRACT_DIR", Path("/nonexistent/molcajete-extracts")
-    )
-
-
-@pytest.fixture(autouse=True)
-def no_shared_cache(monkeypatch, tmp_path):
-    """Never let a test read or write the developer's real gloss cache."""
-    from molcajete_prep.glossing import cache as cache_module
-
-    monkeypatch.setattr(
-        cache_module, "DEFAULT_CACHE_PATH", tmp_path / "test-glosses.sqlite3"
-    )

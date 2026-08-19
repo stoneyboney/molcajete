@@ -3,12 +3,12 @@
 
     uv run python build_bundle.py sources/book.epub --out ../bundles/
 
-Thin shim; the work lives in `molcajete_prep`.
+Thin shim; the work lives in `molcajete_book`.
 """
 
 import sys
 
-from molcajete_prep.cli import main
+from molcajete_book.cli import main
 
 if __name__ == "__main__":
     sys.exit(main())

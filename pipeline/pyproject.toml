@@ -1,32 +1,42 @@
 [project]
-name = "molcajete-prep"
+name = "molcajete-book"
 version = "0.1.0"
-description = "Molcajete prep pipeline: DRM-free EPUB to a schemaVersion 1 bundle."
+description = "Molcajete's book half: DRM-free EPUB to a schemaVersion 1 bundle."
 readme = "README.md"
 
 # spaCy 3.8 ships no cp314 wheels, so 3.14 would compile spacy/thinc/blis from
-# source. Pin below it.
+# source. Pin below it. Repeated from molcajete-prep rather than inherited,
+# because a `requires-python` that disagreed with its dependency's would only
+# surface as a resolution failure.
 requires-python = ">=3.11,<3.14"
 
 dependencies = [
+    # The language half: lemmatisation, the lexicon, glossing, the SPEC §5
+    # teach rules, the Anki seed. Version range here, local path below.
+    "molcajete-prep>=0.1,<0.2",
+    # This half's own: EPUB in, bundle out.
     "ebooklib>=0.18",
     "beautifulsoup4>=4.12",
-    "spacy>=3.8,<3.9",
-    "wordfreq>=3.1",
+    # Re-declared even though molcajete-prep depends on it too. `tool.uv.sources`
+    # is not carried in published metadata, so the URL below is the only thing
+    # that can satisfy this — a consumer inheriting the bare requirement from
+    # molcajete-prep would look on PyPI and fail.
     "es-core-news-sm",
-    # Gloss fallback and Mexican flagging, per SPEC §9 and §11.2. Imported
-    # lazily, so an offline build never needs it loaded.
-    "anthropic>=0.69",
 ]
 
 [project.scripts]
-molcajete-build-bundle = "molcajete_prep.cli:main"
+molcajete-build-bundle = "molcajete_book.cli:main"
 
 [dependency-groups]
 dev = ["pytest>=8.0"]
 
-# The spaCy models are not on PyPI; they are released as wheels on GitHub.
 [tool.uv.sources]
+# Editable, by path, while both repos are moving: edit the package and this
+# suite sees it with no reinstall. `[project.dependencies]` above carries the
+# version range, which is what a release would resolve against — swap this
+# entry for `{ git = "…", tag = "v0.2.0" }` when the package settles.
+molcajete-prep = { path = "../../molcajete-prep", editable = true }
+# The spaCy models are not on PyPI; they are released as wheels on GitHub.
 es-core-news-sm = { url = "https://github.com/explosion/spacy-models/releases/download/es_core_news_sm-3.8.0/es_core_news_sm-3.8.0-py3-none-any.whl" }
 
 [tool.pytest.ini_options]
@@ -37,4 +47,4 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["molcajete_prep"]
+packages = ["molcajete_book"]

@@ -3,7 +3,7 @@
 
     uv run python seed_known.py ~/Desktop/Spanisch.txt --out known.json
 
-Thin shim; the work lives in `molcajete_prep`.
+Thin shim; the work lives in the `molcajete_prep` package.
 """
 
 import sys

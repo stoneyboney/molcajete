@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from molcajete_prep.epub import (
+from molcajete_book.epub import (
     ChapterSource,
     book_metadata,
     extract_chapters,

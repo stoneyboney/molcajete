@@ -611,16 +611,14 @@ wheels = [
 ]
 
 [[package]]
-name = "molcajete-prep"
+name = "molcajete-book"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
-    { name = "anthropic" },
     { name = "beautifulsoup4" },
     { name = "ebooklib" },
     { name = "es-core-news-sm" },
-    { name = "spacy" },
-    { name = "wordfreq" },
+    { name = "molcajete-prep" },
 ]
 
 [package.dev-dependencies]
@@ -630,9 +628,29 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "anthropic", specifier = ">=0.69" },
     { name = "beautifulsoup4", specifier = ">=4.12" },
     { name = "ebooklib", specifier = ">=0.18" },
+    { name = "es-core-news-sm", url = "https://github.com/explosion/spacy-models/releases/download/es_core_news_sm-3.8.0/es_core_news_sm-3.8.0-py3-none-any.whl" },
+    { name = "molcajete-prep", editable = "../../molcajete-prep" },
+]
+
+[package.metadata.requires-dev]
+dev = [{ name = "pytest", specifier = ">=8.0" }]
+
+[[package]]
+name = "molcajete-prep"
+version = "0.1.0"
+source = { editable = "../../molcajete-prep" }
+dependencies = [
+    { name = "anthropic" },
+    { name = "es-core-news-sm" },
+    { name = "spacy" },
+    { name = "wordfreq" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "anthropic", specifier = ">=0.69" },
     { name = "es-core-news-sm", url = "https://github.com/explosion/spacy-models/releases/download/es_core_news_sm-3.8.0/es_core_news_sm-3.8.0-py3-none-any.whl" },
     { name = "spacy", specifier = ">=3.8,<3.9" },
     { name = "wordfreq", specifier = ">=3.1" },

@@ -13,7 +13,7 @@ from __future__ import annotations
 import random
 from datetime import datetime
 
-from molcajete_prep.bundle import BuildResult, count_classifications
+from molcajete_book.bundle import BuildResult, count_classifications
 from molcajete_prep.classify import Classification, LemmaKey, TeachReason, exceeds_cap
 from molcajete_prep.glossing.models import GlossSource, is_model_source
 from molcajete_prep.glossing.pipeline import CONTEXT_ONLY

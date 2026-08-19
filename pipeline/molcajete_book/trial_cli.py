@@ -7,8 +7,9 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
+from molcajete_book.cli import CACHE_DIR
+from molcajete_book.epub import extract_chapters
 from molcajete_prep.claude_status import print_batch_status
-from molcajete_prep.epub import extract_chapters
 from molcajete_prep.glossing.provider import (
     CLAUDE,
     OLLAMA,
@@ -19,7 +20,15 @@ from molcajete_prep.glossing.provider import (
 )
 from molcajete_prep.lexicon import build_lexicon
 from molcajete_prep.nlp import load_pipeline, tokenize_paragraphs
-from molcajete_prep.trial import ARM_A, ARM_B, claude_arms, load_gold, render_trial, run_trial
+from molcajete_prep.trial import (
+    ARM_A,
+    ARM_B,
+    DEFAULT_GOLD_PATH,
+    claude_arms,
+    load_gold,
+    render_trial,
+    run_trial,
+)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -49,8 +58,10 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--gold",
+        default=str(DEFAULT_GOLD_PATH),
         help="a list of lemmas known to be Mexican, one per line. Scores "
-        "mexicanism recall over the ones this book actually contains.",
+        "mexicanism recall over the ones this book actually contains. "
+        "Defaults to the list shipped with molcajete-prep.",
     )
     parser.add_argument(
         "--one-arm",
@@ -152,6 +163,7 @@ def main(argv: list[str] | None = None) -> int:
         size=args.limit,
         providers=arms,
         gold=gold,
+        extract_dir=CACHE_DIR / "kaikki",
         on_status=print_batch_status,
     )
     report = render_trial(trial, built_at=datetime.now(), lexicon=lexicon)

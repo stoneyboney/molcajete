@@ -15,6 +15,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from molcajete_book.epub import ChapterSource, book_metadata, extract_chapters
+from molcajete_book.schema import SCHEMA_VERSION, validate_bundle
 from molcajete_prep.classify import (
     ChapterVocabulary,
     Classification,
@@ -24,12 +26,10 @@ from molcajete_prep.classify import (
     assign_to_chapters,
     classify_all,
 )
-from molcajete_prep.epub import ChapterSource, book_metadata, extract_chapters
 from molcajete_prep.glossing.models import Gloss
 from molcajete_prep.glossing.pipeline import GlossingOptions, GlossingResult, gloss_lexicon
 from molcajete_prep.lexicon import Lexicon, build_lexicon, example_sentence
 from molcajete_prep.nlp import Token, load_pipeline, tokenize_paragraphs
-from molcajete_prep.schema import SCHEMA_VERSION, validate_bundle
 
 LANGUAGE = "es"
 VARIANT = "es-MX"

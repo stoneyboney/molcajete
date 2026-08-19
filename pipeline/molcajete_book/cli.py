@@ -8,15 +8,24 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-from molcajete_prep.bundle import build_bundle, write_bundle
+from molcajete_book.bundle import build_bundle, write_bundle
+from molcajete_book.report import render_report
 from molcajete_prep.claude_status import print_batch_status
 from molcajete_prep.classify import ClassificationOptions
 from molcajete_prep.glossing.pipeline import CONTEXT_ONLY, VERBATIM, GlossingOptions
 from molcajete_prep.glossing.provider import CLAUDE, PROVIDER_NAMES, ProviderOptions
-from molcajete_prep.report import render_report
 
 BUNDLE_SUFFIX = ".molcajete.json"
 REPORT_SUFFIX = ".report.txt"
+
+# The gloss cache and the kaikki extracts stay inside this repo, where they have
+# always been and where `.gitignore` already knows about them. Said explicitly
+# because molcajete-prep's own default is the shared user cache directory —
+# right for a package with several consumers, wrong for a repo whose README
+# tells you to `rm -rf pipeline/cache` when you want a cold build.
+#
+# molcajete_book/cli.py -> pipeline/
+CACHE_DIR = Path(__file__).resolve().parents[1] / "cache"
 
 
 
@@ -188,6 +197,7 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     gloss_options = GlossingOptions(
+        cache_dir=CACHE_DIR,
         use_model=not args.gloss_offline,
         regloss=args.regloss,
         model_limit=args.gloss_limit,

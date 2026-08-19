@@ -5,15 +5,15 @@ from datetime import datetime
 
 import pytest
 
-from molcajete_prep.bundle import (
+from molcajete_book.bundle import (
     build_bundle,
     make_book_id,
     slugify,
     write_bundle,
 )
 from molcajete_prep.classify import ClassificationOptions
-from molcajete_prep.report import render_report
-from molcajete_prep.schema import BundleValidationError, validate_bundle
+from molcajete_book.report import render_report
+from molcajete_book.schema import BundleValidationError, validate_bundle
 
 BUILT_AT = datetime(2026, 8, 16, 20, 14, 3)
 

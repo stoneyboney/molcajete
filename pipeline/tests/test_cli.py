@@ -4,8 +4,8 @@ import json
 
 import pytest
 
-from molcajete_prep.cli import BUNDLE_SUFFIX, REPORT_SUFFIX, load_known_lemmas, main
-from molcajete_prep.schema import validate_bundle
+from molcajete_book.cli import BUNDLE_SUFFIX, REPORT_SUFFIX, load_known_lemmas, main
+from molcajete_book.schema import validate_bundle
 
 
 def test_build_writes_a_bundle_and_a_report(fixture_epub, tmp_path, capsys):
