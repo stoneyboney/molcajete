@@ -11,6 +11,7 @@ from pathlib import Path
 from molcajete_book.bundle import build_bundle, write_bundle
 from molcajete_book.report import render_report
 from molcajete_prep.claude_status import print_batch_status
+from molcajete_prep.glossing.cache import DEFAULT_CACHE_DIR
 from molcajete_prep.classify import ClassificationOptions
 from molcajete_prep.glossing.pipeline import CONTEXT_ONLY, VERBATIM, GlossingOptions
 from molcajete_prep.glossing.provider import CLAUDE, PROVIDER_NAMES, ProviderOptions
@@ -18,14 +19,20 @@ from molcajete_prep.glossing.provider import CLAUDE, PROVIDER_NAMES, ProviderOpt
 BUNDLE_SUFFIX = ".molcajete.json"
 REPORT_SUFFIX = ".report.txt"
 
-# The gloss cache and the kaikki extracts stay inside this repo, where they have
-# always been and where `.gitignore` already knows about them. Said explicitly
-# because molcajete-prep's own default is the shared user cache directory —
-# right for a package with several consumers, wrong for a repo whose README
-# tells you to `rm -rf pipeline/cache` when you want a cold build.
+# The gloss cache and the kaikki extracts live in molcajete-prep's own default
+# location, `$XDG_CACHE_HOME/molcajete-prep/`, and no longer inside this repo.
 #
-# molcajete_book/cli.py -> pipeline/
-CACHE_DIR = Path(__file__).resolve().parents[1] / "cache"
+# They moved when Rocola became the second consumer. What is in there — 11,764
+# Wiktionary rows, 4,843 model glosses and 2.9 GB of extracts — is data about
+# Spanish, belonging to the package rather than to either repo that reads it,
+# and a per-repo copy means re-downloading the extracts and re-inferring glosses
+# that already exist next door. At the measured 0.19 lemmas/sec that is hours.
+#
+# A cold build is now `rm -rf "$(python -c 'from molcajete_prep.glossing.cache
+# import DEFAULT_CACHE_DIR; print(DEFAULT_CACHE_DIR)')"`, or simply
+# `--cache-dir` pointed somewhere empty — which is the better habit anyway,
+# since it leaves the shared cache alone.
+CACHE_DIR = DEFAULT_CACHE_DIR
 
 
 
@@ -143,6 +150,14 @@ def build_parser() -> argparse.ArgumentParser:
         help="send at most this many lemmas to the model, most-used first",
     )
     glossing.add_argument(
+        "--cache-dir",
+        type=Path,
+        default=CACHE_DIR,
+        help="where the gloss cache and the kaikki extracts live. Defaults to "
+        "molcajete-prep's shared location, which Rocola reads too — point it "
+        "somewhere empty for a cold build rather than deleting the shared one.",
+    )
+    glossing.add_argument(
         "--regloss",
         action="store_true",
         help="ignore cached glosses and fetch them again. Use when a cached "
@@ -197,7 +212,7 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     gloss_options = GlossingOptions(
-        cache_dir=CACHE_DIR,
+        cache_dir=args.cache_dir,
         use_model=not args.gloss_offline,
         regloss=args.regloss,
         model_limit=args.gloss_limit,

@@ -150,10 +150,13 @@ Four things could not be a pure move, and each is worth knowing:
 
 1. **The gloss cache could not keep deriving its path from `__file__`.** In
    site-packages, `parents[2]` is inside the venv and a `uv sync` wipes it. The
-   package now defaults to `$XDG_CACHE_HOME/molcajete-prep/`; `cli.py`'s
-   `CACHE_DIR` passes `pipeline/cache/` explicitly, so this repo's cache and its
-   3 GB of extracts never moved. **`sources.py --fetch` now needs `--dir
-   cache/kaikki`** or it downloads them a second time into the home directory.
+   package now defaults to `$XDG_CACHE_HOME/molcajete-prep/`. `cli.py` used to
+   override that with `pipeline/cache/` so this repo's 3 GB of extracts never
+   moved — **that override is gone.** When Rocola became the second consumer the
+   cache moved to the package default, which is where data about Spanish rather
+   than about this book belongs. `sources.py --fetch` needs no `--dir`, and a
+   cold build is `--cache-dir` pointed somewhere empty rather than `rm -rf` on a
+   directory two repos now read.
 2. **The shared test fixtures ship from the package**, as
    `molcajete_prep.pytest_plugin`: the `nlp` and `extracts` fixtures and the two
    autouse guards. Both suites build bundles and both need the guards; copying

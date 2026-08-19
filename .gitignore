@@ -12,9 +12,12 @@ pipeline/tests/fixtures/*.epub
 *.anki.txt
 known.json
 
-# Downloaded Wiktionary extracts and the shared gloss cache. Derived data: a
-# rebuild reproduces all of it, and the extracts alone are over a gigabyte.
+# The Wiktionary extracts and the gloss cache used to live in pipeline/cache/.
+# They now live in molcajete-prep's own default, $XDG_CACHE_HOME/molcajete-prep/,
+# because Rocola reads them too. The rule stays for anyone whose checkout still
+# has the old directory, and for a --cache-dir pointed back inside the repo.
 pipeline/cache/
+cache/
 
 # Generated bundles and reports, except the committed test fixture — the app
 # needs one small, stable bundle to develop its import path against in Phase 3.

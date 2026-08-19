@@ -32,14 +32,23 @@ so building under 3.14 would compile spacy, thinc and blis from source.
 ### Wiktionary extracts (needed for glossing)
 
 ```bash
-uv run python -m molcajete_prep.glossing.sources --fetch --dir cache/kaikki
+uv run python -m molcajete_prep.glossing.sources --fetch
 ```
 
-**Pass `--dir`.** The package's own default is the shared user cache directory,
-which is right for a package with several consumers; this repo keeps its
-extracts and its gloss cache in `pipeline/cache/`, where `.gitignore` already
-knows about them and where `rm -rf` is an obvious way to force a cold build.
-`molcajete_book/cli.py`'s `CACHE_DIR` is what tells a build the same thing.
+**No `--dir` any more.** The extracts and the gloss cache live in
+molcajete-prep's own default location, `$XDG_CACHE_HOME/molcajete-prep/`, and
+the package's default is now simply correct. They moved out of `pipeline/cache/`
+when Rocola became the second consumer: what is in there is data about Spanish
+rather than about this book, and a per-repo copy means re-downloading 2.9 GB of
+extracts and re-inferring glosses that already exist next door.
+
+**A cold build is no longer `rm -rf pipeline/cache`.** That directory is gone,
+and deleting the shared one throws away Rocola's glosses too. Pass
+`--cache-dir` somewhere empty instead:
+
+```bash
+uv run build_bundle.py … --cache-dir /tmp/cold-cache
+```
 
 ### A gloss provider
 
@@ -161,7 +170,8 @@ uv run python gloss_trial.py sources/noches.epub \
 ```
 
 Glosses a stratified sample and writes the answers out. Writes no bundle and
-never touches the shared cache. Worth running before the first full book, and
+never writes to the shared cache — it reads the extracts from it, but its own
+answers stay in the report. Worth running before the first full book, and
 again after any change to the prompt. Pass `--model` more than once to compare
 local models side by side.
 
