@@ -1,5 +1,10 @@
 import { useCallback, useState } from 'react'
-import { importFile, type ImportOutcome } from '../app/importFile'
+import {
+  importFile,
+  importLogOutcomeForFailure,
+  importLogOutcomeForSuccess,
+  type ImportOutcome,
+} from '../app/importFile'
 import { useRepositories } from '../app/repositories'
 import { navigate } from '../app/useRoute'
 import { useAsync } from '../app/useAsync'
@@ -16,7 +21,7 @@ import { ImportButton } from './ImportButton'
 import { Screen } from './Screen'
 
 export function Library() {
-  const { books, known, cards, clock } = useRepositories()
+  const { books, known, cards, diagnostics, clock } = useRepositories()
   const [reloads, setReloads] = useState(0)
   const [busy, setBusy] = useState(false)
   const [failure, setFailure] = useState<{
@@ -42,16 +47,22 @@ export function Library() {
       try {
         const outcome: ImportOutcome = await importFile(file, { books, known })
         setDone(describeImportSuccess(outcome))
+        void diagnostics
+          .recordImport({ at: clock.now(), outcome: importLogOutcomeForSuccess(outcome) })
+          .catch(() => {})
         // A seed changes no book row, but it changes every teach set behind
         // them, so the reload matters either way.
         setReloads((n) => n + 1)
       } catch (error) {
         setFailure(describeImportFailure(error))
+        void diagnostics
+          .recordImport({ at: clock.now(), outcome: importLogOutcomeForFailure(error) })
+          .catch(() => {})
       } finally {
         setBusy(false)
       }
     },
-    [books, known],
+    [books, known, diagnostics, clock],
   )
 
   const remove = useCallback(
@@ -80,6 +91,23 @@ export function Library() {
           <span className="text-accent text-sm">Wiederholen ›</span>
         </button>
       )}
+
+      <div className="mb-6 flex gap-4">
+        <button
+          type="button"
+          onClick={() => navigate({ name: 'notizen' })}
+          className="text-accent text-sm"
+        >
+          Notizen
+        </button>
+        <button
+          type="button"
+          onClick={() => navigate({ name: 'statistik' })}
+          className="text-accent text-sm"
+        >
+          Statistik
+        </button>
+      </div>
 
       {done && (
         <p className="border-rule text-ink-muted mb-6 rounded-lg border border-dashed px-4 py-3 text-sm">
@@ -146,6 +174,14 @@ export function Library() {
           Die Bibliothek konnte nicht gelesen werden.
         </p>
       )}
+
+      <button
+        type="button"
+        onClick={() => navigate({ name: 'diagnose' })}
+        className="text-ink-faint mt-10 block text-xs"
+      >
+        Diagnose
+      </button>
     </Screen>
   )
 }

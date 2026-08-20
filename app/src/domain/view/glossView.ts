@@ -8,12 +8,22 @@
  * blank and looking broken.
  */
 
+import { lemmaId, type LemmaId } from '../lemma'
+import { CLOSED_CLASS_POS } from '../teachSet'
 import type { LemmaKey, LexiconEntry } from '../types'
 
 export interface GlossView {
   key: LemmaKey
+  /** The global id a card would be filed under. See `lemma.ts`. */
+  lemmaId: LemmaId
   lemma: string
   pos: string
+  /**
+   * False for closed-class parts of speech — same rule `teachSet.ts` uses to
+   * keep them out of automatic teach sets. A flashcard does not teach `de`;
+   * the `Add card` button honours that even for a deliberate manual add.
+   */
+  cardable: boolean
   /** null when the pipeline produced no German gloss for this lemma. */
   de: string | null
   en: string | null
@@ -39,8 +49,10 @@ export function buildGlossView(
   if (!entry) return null
   return {
     key,
+    lemmaId: lemmaId(entry),
     lemma: entry.lemma,
     pos: entry.pos,
+    cardable: !CLOSED_CLASS_POS.has(entry.pos),
     de: entry.de ?? null,
     en: entry.en ?? null,
     example: entry.example?.es ?? null,

@@ -157,3 +157,36 @@ export function isDue(card: SrsCard, now: Date): boolean {
 export function dueAt(card: SrsCard): Date {
   return card.fsrs.due
 }
+
+/** `ts-fsrs`'s `State` enum, renamed for display. Diagnostics only. */
+export type FsrsStateLabel = 'new' | 'learning' | 'review' | 'relearning'
+
+const STATE_LABELS: Record<State, FsrsStateLabel> = {
+  [State.New]: 'new',
+  [State.Learning]: 'learning',
+  [State.Review]: 'review',
+  [State.Relearning]: 'relearning',
+}
+
+/** How many cards sit in each FSRS state. Diagnostics only. */
+export function countByState(cards: Iterable<SrsCard>): Record<FsrsStateLabel, number> {
+  const counts: Record<FsrsStateLabel, number> = {
+    new: 0,
+    learning: 0,
+    review: 0,
+    relearning: 0,
+  }
+  for (const card of cards) {
+    counts[STATE_LABELS[card.fsrs.state]] += 1
+  }
+  return counts
+}
+
+/** The single soonest `due` across every card. `undefined` iff `cards` is empty. Diagnostics only. */
+export function nextDue(cards: Iterable<SrsCard>): Date | undefined {
+  let soonest: Date | undefined
+  for (const card of cards) {
+    if (!soonest || card.fsrs.due.getTime() < soonest.getTime()) soonest = card.fsrs.due
+  }
+  return soonest
+}

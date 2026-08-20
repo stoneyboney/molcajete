@@ -10,6 +10,7 @@ import { useRepositories } from '../app/repositories'
 import { LIBRARY } from '../app/routes'
 import { useAsync } from '../app/useAsync'
 import { navigate, useGoBack } from '../app/useRoute'
+import type { LemmaId } from '../domain/lemma'
 import { buildGlossView } from '../domain/view/glossView'
 import { readingFraction } from '../domain/view/progress'
 import {
@@ -17,6 +18,7 @@ import {
   lexiconKeysOf,
   type ChapterView,
 } from '../domain/view/readerView'
+import { newCard } from '../domain/srs/scheduler'
 import type { LemmaKey, LexiconEntry } from '../domain/types'
 import { GlossSheet } from './GlossSheet'
 import { Paragraph } from './Paragraph'
@@ -26,6 +28,7 @@ interface LoadedChapter {
   view: ChapterView
   lexicon: Map<LemmaKey, LexiconEntry>
   savedParagraphId: string | null
+  cardedLemmas: Set<LemmaId>
 }
 
 export function Reader({
@@ -35,7 +38,7 @@ export function Reader({
   bookId: string
   chapterIndex: number
 }) {
-  const { books, positions } = useRepositories()
+  const { books, positions, cards } = useRepositories()
 
   const state = useAsync<LoadedChapter | null>(async () => {
     const chapter = await books.getChapter(bookId, chapterIndex)
@@ -43,16 +46,18 @@ export function Reader({
     // One bulk read of exactly the entries this chapter can reach. After this
     // the gloss sheet and the reveal toggle are synchronous, which is what
     // lets the components stay free of loading states mid-paragraph.
-    const [lexicon, saved] = await Promise.all([
+    const [lexicon, saved, cardedLemmas] = await Promise.all([
       books.getLexiconEntries(bookId, lexiconKeysOf(chapter)),
       positions.get(bookId, chapterIndex),
+      cards.listCardedLemmas(),
     ])
     return {
       view: buildChapterView(chapter, lexicon),
       lexicon,
       savedParagraphId: saved?.paragraphId ?? null,
+      cardedLemmas,
     }
-  }, [books, positions, bookId, chapterIndex])
+  }, [books, positions, cards, bookId, chapterIndex])
 
   if (state.status === 'loading') return <ReaderBlank />
   if (state.status === 'failed' || !state.value) {
@@ -77,10 +82,14 @@ function ChapterReader({
   chapterIndex: number
   loaded: LoadedChapter
 }) {
-  const { positions } = useRepositories()
+  const { positions, cards, clock, bookmarks } = useRepositories()
   const goBack = useGoBack({ name: 'chapters', bookId })
   const [selected, setSelected] = useState<LemmaKey | null>(null)
   const [revealAll, setRevealAll] = useState(false)
+  const [cardedLemmas, setCardedLemmas] = useState(loaded.cardedLemmas)
+  const [justAddedKey, setJustAddedKey] = useState<LemmaKey | null>(null)
+  const articleRef = useRef<HTMLElement | null>(null)
+  const [selectedPhrase, setSelectedPhrase] = useState<string | null>(null)
   const showChrome = useChromeOnScrollUp()
 
   const paragraphIds = useMemo(
@@ -111,16 +120,85 @@ function ChapterReader({
   // nearest ancestor carrying a lexicon key, which is the word span itself or
   // the ruby around it.
   const onTap = useCallback((event: ReactMouseEvent<HTMLElement>) => {
+    // A phrase-selection drag (SPEC §6.4's long-press bookmark) can end on a
+    // tap-like release; opening a gloss sheet for whatever word is underneath
+    // a real selection would be a second, unwanted action on top of it.
+    if (window.getSelection()?.isCollapsed === false) return
     const target = event.target
     if (!(target instanceof Element)) return
     const word = target.closest('[data-t]')
     const key = word?.getAttribute('data-t')
-    if (key) setSelected(key)
+    if (key) {
+      setSelected(key)
+      setJustAddedKey(null)
+    }
   }, [])
 
   const gloss = selected
     ? buildGlossView(selected, loaded.lexicon.get(selected))
     : null
+
+  const onAddCard = useCallback(async () => {
+    if (!gloss) return
+    const face = {
+      pos: gloss.pos,
+      de: gloss.de,
+      en: gloss.en,
+      example: gloss.example,
+      regionNote: gloss.regionNote,
+      mexicanism: gloss.mexicanism,
+    }
+    await cards.put(newCard(gloss.lemmaId, clock.now(), face))
+    setCardedLemmas((carded) => new Set(carded).add(gloss.lemmaId))
+    setJustAddedKey(gloss.key)
+  }, [gloss, cards, clock])
+
+  const cardStatus: 'carded' | 'added' | 'offerable' = gloss
+    ? justAddedKey === gloss.key
+      ? 'added'
+      : cardedLemmas.has(gloss.lemmaId)
+        ? 'carded'
+        : 'offerable'
+    : 'offerable'
+
+  // SPEC §6.4's long-press bookmark, built on the browser's own press-and-hold
+  // text selection rather than a custom gesture — see Reader.tsx's onTap
+  // comment for why a real selection also has to suppress tap-to-gloss.
+  useEffect(() => {
+    const onSelectionChange = () => {
+      const selection = window.getSelection()
+      const anchor = selection?.anchorNode
+      if (
+        !selection ||
+        selection.isCollapsed ||
+        !anchor ||
+        !articleRef.current?.contains(anchor)
+      ) {
+        setSelectedPhrase(null)
+        return
+      }
+      const text = selection.toString().trim()
+      setSelectedPhrase(text.length > 0 ? text : null)
+    }
+    document.addEventListener('selectionchange', onSelectionChange)
+    return () => document.removeEventListener('selectionchange', onSelectionChange)
+  }, [])
+
+  const onSaveBookmark = useCallback(async () => {
+    const selection = window.getSelection()
+    if (!selection || selection.rangeCount === 0) return
+    const text = selection.toString().trim()
+    if (!text) return
+    const anchor = selection.anchorNode
+    const anchorElement =
+      anchor instanceof Element ? anchor : anchor?.parentElement ?? null
+    const paragraphId = anchorElement?.closest('[data-pid]')?.getAttribute('data-pid')
+    if (!paragraphId) return
+
+    await bookmarks.add({ bookId, chapterIndex, paragraphId, text, createdAt: clock.now() })
+    selection.removeAllRanges()
+    setSelectedPhrase(null)
+  }, [bookmarks, bookId, chapterIndex, clock])
 
   return (
     <div className="min-h-dvh">
@@ -152,6 +230,7 @@ function ChapterReader({
       </div>
 
       <article
+        ref={articleRef}
         lang="es"
         data-reveal={revealAll ? 'true' : 'false'}
         onClick={onTap}
@@ -168,8 +247,27 @@ function ChapterReader({
         <p className="reader-end">Ende des Kapitels</p>
       </article>
 
+      {selectedPhrase && (
+        <button
+          type="button"
+          onClick={() => void onSaveBookmark()}
+          className="bg-accent text-paper fixed inset-x-0 z-40 mx-auto w-fit rounded-full px-5 py-2.5 text-sm shadow-lg"
+          style={{ bottom: 'calc(env(safe-area-inset-bottom) + 1.5rem)' }}
+        >
+          Notiz speichern
+        </button>
+      )}
+
       {gloss && (
-        <GlossSheet view={gloss} onDismiss={() => setSelected(null)} />
+        <GlossSheet
+          view={gloss}
+          cardStatus={cardStatus}
+          onAddCard={() => void onAddCard()}
+          onDismiss={() => {
+            setSelected(null)
+            setJustAddedKey(null)
+          }}
+        />
       )}
     </div>
   )

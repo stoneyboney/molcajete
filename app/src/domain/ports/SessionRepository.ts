@@ -29,4 +29,7 @@ export interface SessionRepository {
   commit(session: TeachingSession, effects: readonly SessionEffect[]): Promise<void>
 
   clear(bookId: BookId, chapterIndex: number): Promise<void>
+
+  /** Every in-progress session, across every book. Diagnostics only. */
+  listAll(): Promise<TeachingSession[]>
 }

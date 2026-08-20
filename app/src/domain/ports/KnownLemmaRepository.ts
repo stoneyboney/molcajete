@@ -14,9 +14,26 @@
 
 import type { LemmaId } from '../lemma'
 
+/**
+ * Defined here, not in `src/infra/`: the port owns the vocabulary, and
+ * `db.ts` imports this type rather than the reverse (CLAUDE.md rule 4 — no
+ * domain file may depend on `src/infra/`, even for a type this small).
+ */
+export type KnownLemmaSource = 'seed' | 'manual'
+
 export interface KnownLemmaRepository {
   listAll(): Promise<Set<LemmaId>>
 
-  /** Merges. Marking a lemma known twice is not an error. */
-  add(lemmaIds: readonly LemmaId[]): Promise<void>
+  /**
+   * Diagnostics only. `source` is `undefined` for rows written before that
+   * field existed — a legacy bucket, not a guess.
+   */
+  listAllWithSource(): Promise<Map<LemmaId, KnownLemmaSource | undefined>>
+
+  /**
+   * Merges. Marking a lemma known twice is not an error. `source` applies to
+   * the whole batch — both real call sites (a seed import, or a single
+   * "Ich kenne das") only ever add from one source at a time.
+   */
+  add(lemmaIds: readonly LemmaId[], source: KnownLemmaSource): Promise<void>
 }

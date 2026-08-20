@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { buildKnownState } from '../../src/domain/knownLemmas'
+import { buildKnownState, countKnownByProvenance } from '../../src/domain/knownLemmas'
+import type { KnownLemmaSource } from '../../src/domain/ports/KnownLemmaRepository'
 import { dueAt, gradeCard, newCard, type SrsCard } from '../../src/domain/srs/scheduler'
 import { fixedClock } from '../clock'
 
@@ -55,5 +56,51 @@ describe('buildKnownState', () => {
     const cards = [maturedCard('sierra')]
     expect(buildKnownState(cards, [], { minStabilityDays: 21 }).known.size).toBe(1)
     expect(buildKnownState(cards, [], { minStabilityDays: 3650 }).known.size).toBe(0)
+  })
+})
+
+describe('countKnownByProvenance', () => {
+  it('buckets by source, and a matured card with no row is maturedOnly', () => {
+    const sources = new Map<string, KnownLemmaSource | undefined>([
+      ['jacal', 'seed'],
+      ['machete', 'manual'],
+      ['zacate', undefined], // a knownLemmas row from before `source` existed
+    ])
+    const cards = [maturedCard('sierra')] // matured, but never marked by hand or seed
+
+    const provenance = countKnownByProvenance(cards, sources)
+
+    expect(provenance).toEqual({
+      seed: 1,
+      manual: 1,
+      legacy: 1,
+      maturedOnly: 1,
+      total: 4,
+    })
+  })
+
+  it('counts a card that is both marked and matured once, under its stored source', () => {
+    const sources = new Map<string, KnownLemmaSource | undefined>([['sierra', 'seed']])
+    const provenance = countKnownByProvenance([maturedCard('sierra')], sources)
+    expect(provenance).toEqual({ seed: 1, manual: 0, legacy: 0, maturedOnly: 0, total: 1 })
+  })
+
+  it('excludes a carded-but-unmatured lemma entirely', () => {
+    const provenance = countKnownByProvenance([freshCard('fusil')], new Map())
+    expect(provenance.total).toBe(0)
+  })
+
+  it('agrees with buildKnownState on the total', () => {
+    const cards = [maturedCard('sierra'), freshCard('fusil')]
+    const sources = new Map<string, KnownLemmaSource | undefined>([
+      ['jacal', 'seed'],
+      ['zacate', 'manual'],
+    ])
+    const markedKnown = [...sources.keys()]
+
+    const provenance = countKnownByProvenance(cards, sources)
+    const { known } = buildKnownState(cards, markedKnown)
+
+    expect(provenance.total).toBe(known.size)
   })
 })

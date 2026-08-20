@@ -21,6 +21,12 @@ export type Route =
    * session rather than an empty one.
    */
   | { name: 'session'; bookId: string; chapterIndex: number }
+  /** Read-only diagnostics for the device pass. Understated, reached from the library. */
+  | { name: 'diagnose' }
+  /** SPEC §6.4's saved phrases, cross-book. */
+  | { name: 'notizen' }
+  /** Snapshot reading statistics, cross-book. */
+  | { name: 'statistik' }
 
 export const LIBRARY: Route = { name: 'library' }
 
@@ -29,6 +35,9 @@ export function parseRoute(hash: string): Route {
   const path = hash.replace(/^#\/?/, '')
   if (path === '') return LIBRARY
   if (path === 'wiederholen') return { name: 'review' }
+  if (path === 'diagnose') return { name: 'diagnose' }
+  if (path === 'notizen') return { name: 'notizen' }
+  if (path === 'statistik') return { name: 'statistik' }
 
   const parts = path.split('/').map(decodeURIComponent)
 
@@ -61,5 +70,11 @@ export function routeToHash(route: Route): string {
       return `#/book/${encodeURIComponent(route.bookId)}/ch/${route.chapterIndex}`
     case 'session':
       return `#/book/${encodeURIComponent(route.bookId)}/ch/${route.chapterIndex}/lernen`
+    case 'diagnose':
+      return '#/diagnose'
+    case 'notizen':
+      return '#/notizen'
+    case 'statistik':
+      return '#/statistik'
   }
 }

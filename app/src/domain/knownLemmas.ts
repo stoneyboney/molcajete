@@ -10,6 +10,7 @@
  */
 
 import type { LemmaId } from './lemma'
+import type { KnownLemmaSource } from './ports/KnownLemmaRepository'
 import {
   isKnown,
   type KnownThresholds,
@@ -42,4 +43,53 @@ export function buildKnownState(
   }
 
   return { known, carded }
+}
+
+/**
+ * How many known lemmas came from each route. Diagnostics only.
+ *
+ * Same traversal as `buildKnownState`, bucketed by provenance instead of
+ * collapsed into one `Set`. A lemma matured via a card AND separately marked
+ * known is counted once, by its stored `source` — the `knownLemmas` row is
+ * what "known" actually keys off, so a matured card whose lemma has no such
+ * row falls into `maturedOnly`.
+ */
+export interface KnownProvenance {
+  seed: number
+  manual: number
+  /** A `knownLemmas` row from before the `source` field existed (CLAUDE.md's diagnostics note). */
+  legacy: number
+  /** Known only because a card matured — never marked by hand or by seed. */
+  maturedOnly: number
+  total: number
+}
+
+export function countKnownByProvenance(
+  cards: Iterable<SrsCard>,
+  knownLemmaSources: ReadonlyMap<LemmaId, KnownLemmaSource | undefined>,
+  thresholds: KnownThresholds = DEFAULT_KNOWN_THRESHOLDS,
+): KnownProvenance {
+  const provenance: KnownProvenance = {
+    seed: 0,
+    manual: 0,
+    legacy: 0,
+    maturedOnly: 0,
+    total: 0,
+  }
+
+  const known = new Set<LemmaId>(knownLemmaSources.keys())
+  for (const card of cards) {
+    if (isKnown(card, thresholds)) known.add(card.lemmaId)
+  }
+
+  for (const lemmaId of known) {
+    const source = knownLemmaSources.get(lemmaId)
+    if (source === 'seed') provenance.seed += 1
+    else if (source === 'manual') provenance.manual += 1
+    else if (knownLemmaSources.has(lemmaId)) provenance.legacy += 1
+    else provenance.maturedOnly += 1
+  }
+
+  provenance.total = known.size
+  return provenance
 }

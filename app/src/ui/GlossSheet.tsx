@@ -2,15 +2,23 @@ import { useEffect } from 'react'
 import type { GlossView } from '../domain/view/glossView'
 
 /**
- * Tap-to-reveal, and nothing else. No inline translation anywhere in the
- * reader (SPEC §13 decision 3), and no `Add card` button — cards arrive in
- * Phase 4 with the scheduler that would have to hold them.
+ * Tap-to-reveal, plus SPEC §6.4's `Add card` button. No inline translation
+ * anywhere in the reader (SPEC §13 decision 3) — the button is the only
+ * interactive element besides dismissal.
+ *
+ * `cardStatus` and `onAddCard` are owned by `Reader.tsx`: this component
+ * stays dumb (rule 5) and only renders the state it's given — already
+ * carded, not cardable (closed-class POS), or offerable.
  */
 export function GlossSheet({
   view,
+  cardStatus,
+  onAddCard,
   onDismiss,
 }: {
   view: GlossView
+  cardStatus: 'carded' | 'added' | 'offerable'
+  onAddCard: () => void
   onDismiss: () => void
 }) {
   useEffect(() => {
@@ -84,6 +92,26 @@ export function GlossSheet({
           >
             {view.example}
           </p>
+        )}
+
+        {view.cardable && (
+          <div className="mt-5">
+            {cardStatus === 'offerable' && (
+              <button
+                type="button"
+                onClick={onAddCard}
+                className="border-rule text-accent w-full rounded-xl border px-4 py-3 text-sm"
+              >
+                Karte hinzufügen
+              </button>
+            )}
+            {cardStatus === 'added' && (
+              <p className="text-ink-muted text-sm">Karte hinzugefügt.</p>
+            )}
+            {cardStatus === 'carded' && (
+              <p className="text-ink-faint text-sm">Wird schon gelernt.</p>
+            )}
+          </div>
         )}
       </div>
     </div>

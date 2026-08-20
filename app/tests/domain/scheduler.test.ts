@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import {
+  countByState,
   dueAt,
   gradeCard,
   isKnown,
   isPassingGrade,
   newCard,
+  nextDue,
   type ReviewGrade,
   type SrsCard,
 } from '../../src/domain/srs/scheduler'
@@ -125,5 +127,40 @@ describe('a card studied on schedule for three weeks', () => {
     const card = study('madriguera', 'good', 6)
     expect(isKnown(card, { minStabilityDays: 21 })).toBe(true)
     expect(isKnown(card, { minStabilityDays: 3650 })).toBe(false)
+  })
+})
+
+describe('countByState', () => {
+  it('buckets an empty list to all zeros', () => {
+    expect(countByState([])).toEqual({ new: 0, learning: 0, review: 0, relearning: 0 })
+  })
+
+  it('buckets a fresh card as learning, and a matured one as review', () => {
+    const learning = gradeCard(newCard('madriguera', START), 'good', START)
+    const clock = fixedClock(START)
+    let review = newCard('sierra', clock.now())
+    for (let i = 0; i < 6; i++) {
+      clock.set(dueAt(review))
+      review = gradeCard(review, 'good', clock.now())
+    }
+
+    expect(countByState([learning, review])).toEqual({
+      new: 0,
+      learning: 1,
+      review: 1,
+      relearning: 0,
+    })
+  })
+})
+
+describe('nextDue', () => {
+  it('is undefined for an empty list', () => {
+    expect(nextDue([])).toBeUndefined()
+  })
+
+  it('is the soonest due date, regardless of order', () => {
+    const soon = newCard('madriguera', START)
+    const later = newCard('sierra', new Date(START.getTime() + 60_000))
+    expect(nextDue([later, soon])?.getTime()).toBe(dueAt(soon).getTime())
   })
 })

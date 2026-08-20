@@ -44,5 +44,8 @@ export interface CardRepository {
   /** How many are due, without reading their schedules. For the library chip. */
   countDue(now: Date): Promise<number>
 
+  /** Every card there is, mature or not. Diagnostics only — everything else asks for `due` or `carded`, never all of them. */
+  listAll(): Promise<SrsCard[]>
+
   put(card: SrsCard): Promise<void>
 }

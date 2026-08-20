@@ -10,8 +10,12 @@ import {
 } from '../domain/bundle/parseBundle'
 import { KnownFormatError } from '../domain/bundle/parseKnown'
 import { UnrecognisedFileError, type ImportOutcome } from '../app/importFile'
+import type { ImportLogOutcome } from '../domain/ports/DiagnosticsRepository'
+import type { FsrsStateLabel } from '../domain/srs/scheduler'
 
 const numbers = new Intl.NumberFormat('de-DE')
+const dateTimeFormat = new Intl.DateTimeFormat('de-DE', { dateStyle: 'short', timeStyle: 'medium' })
+const dateFormat = new Intl.DateTimeFormat('de-DE', { dateStyle: 'medium' })
 
 export function words(value: number): string {
   return `${numbers.format(value)} Wörter`
@@ -146,4 +150,78 @@ export function describeImportFailure(error: unknown): ImportFailure {
     headline: 'Import fehlgeschlagen.',
     detail: error instanceof Error ? error.message : String(error),
   }
+}
+
+// --- #/diagnose ---------------------------------------------------------
+
+export function dateTime(date: Date): string {
+  return dateTimeFormat.format(date)
+}
+
+export function shortDate(date: Date): string {
+  return dateFormat.format(date)
+}
+
+/** `undefined` in, dash out — the storage estimate and the build hash both read this way when unavailable. */
+export function orUnknown(value: string | undefined): string {
+  return value ?? 'unbekannt'
+}
+
+const BYTE_UNITS = ['B', 'KB', 'MB', 'GB'] as const
+
+export function bytes(value: number | undefined): string {
+  if (value === undefined) return 'unbekannt'
+  let size = value
+  let unit = 0
+  while (size >= 1024 && unit < BYTE_UNITS.length - 1) {
+    size /= 1024
+    unit += 1
+  }
+  const formatted = unit === 0 ? numbers.format(size) : size.toFixed(1).replace('.', ',')
+  return `${formatted} ${BYTE_UNITS[unit]}`
+}
+
+export const FSRS_STATE_LABELS: Record<FsrsStateLabel, string> = {
+  new: 'Neu',
+  learning: 'Lernen',
+  review: 'Wiederholung',
+  relearning: 'Erneut lernen',
+}
+
+export function schemaStatus(schema: { live: number; expected: number; matches: boolean }): string {
+  return schema.matches
+    ? `Schema v${schema.live} (aktuell)`
+    : `Schema v${schema.live} — Code erwartet v${schema.expected}`
+}
+
+export function serviceWorkerStatus(sw: {
+  supported: boolean
+  registered: boolean
+  waiting: boolean
+}): string {
+  if (!sw.supported) return 'Service Worker nicht unterstützt'
+  if (sw.waiting) return 'Neue Version wartet'
+  return sw.registered ? 'Aktiv' : 'Nicht registriert'
+}
+
+export function storageStatus(storage: {
+  usageBytes: number | undefined
+  quotaBytes: number | undefined
+  supported: boolean
+}): string {
+  if (!storage.supported) return 'Nicht verfügbar'
+  return `${bytes(storage.usageBytes)} von ${bytes(storage.quotaBytes)}`
+}
+
+/** A one-line summary for a row in the import log. */
+export function describeImportLogOutcome(outcome: ImportLogOutcome): string {
+  if (outcome.result === 'failure') {
+    return `Fehlgeschlagen (${outcome.fileShape}) — ${outcome.errorName}: ${outcome.message}`
+  }
+  if (outcome.fileShape === 'book') {
+    return outcome.replaced
+      ? `Buch „${outcome.title}“ ersetzt · ${chapters(outcome.chapterCount)}`
+      : `Buch „${outcome.title}“ importiert · ${chapters(outcome.chapterCount)}`
+  }
+  return `Seed: ${lemmas(outcome.added)} neu von ${numbers.format(outcome.inFile)}`
 }

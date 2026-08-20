@@ -1,5 +1,8 @@
 import type { LemmaId } from '../domain/lemma'
-import type { KnownLemmaRepository } from '../domain/ports/KnownLemmaRepository'
+import type {
+  KnownLemmaRepository,
+  KnownLemmaSource,
+} from '../domain/ports/KnownLemmaRepository'
 import { db, type MolcajeteDatabase } from './db'
 
 /**
@@ -15,10 +18,19 @@ export class DexieKnownLemmaRepository implements KnownLemmaRepository {
     return new Set(keys)
   }
 
-  async add(lemmaIds: readonly LemmaId[], markedAt: Date = new Date()): Promise<void> {
+  async listAllWithSource(): Promise<Map<LemmaId, KnownLemmaSource | undefined>> {
+    const rows = await this.database.knownLemmas.toArray()
+    return new Map(rows.map((row) => [row.lemmaId, row.source]))
+  }
+
+  async add(
+    lemmaIds: readonly LemmaId[],
+    source: KnownLemmaSource,
+    markedAt: Date = new Date(),
+  ): Promise<void> {
     if (lemmaIds.length === 0) return
     await this.database.knownLemmas.bulkPut(
-      lemmaIds.map((lemmaId) => ({ lemmaId, markedAt })),
+      lemmaIds.map((lemmaId) => ({ lemmaId, markedAt, source })),
     )
   }
 }

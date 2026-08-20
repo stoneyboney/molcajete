@@ -35,7 +35,11 @@ export class DexieSessionRepository implements SessionRepository {
         if (effect.kind === 'saveCard') {
           await cards.put({ lemmaId: effect.card.lemmaId, card: effect.card })
         } else {
-          await knownLemmas.put({ lemmaId: effect.lemmaId, markedAt })
+          // Written directly rather than through `KnownLemmaRepository.add`,
+          // so it lands in the same atomic transaction as the card write —
+          // see the file header. `source: 'manual'` because this is always
+          // "Ich kenne das", never a seed import.
+          await knownLemmas.put({ lemmaId: effect.lemmaId, markedAt, source: 'manual' })
         }
       }
 
@@ -55,5 +59,10 @@ export class DexieSessionRepository implements SessionRepository {
 
   async clear(bookId: BookId, chapterIndex: number): Promise<void> {
     await this.database.sessions.delete([bookId, chapterIndex])
+  }
+
+  async listAll(): Promise<TeachingSession[]> {
+    const rows = await this.database.sessions.toArray()
+    return rows.map((row) => row.session)
   }
 }

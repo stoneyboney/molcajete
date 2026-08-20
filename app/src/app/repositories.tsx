@@ -1,7 +1,9 @@
 import { createContext, useContext, type ReactNode } from 'react'
+import type { BookmarkRepository } from '../domain/ports/BookmarkRepository'
 import type { BookRepository } from '../domain/ports/BookRepository'
 import type { CardRepository } from '../domain/ports/CardRepository'
 import type { Clock } from '../domain/ports/Clock'
+import type { DiagnosticsRepository } from '../domain/ports/DiagnosticsRepository'
 import type { KnownLemmaRepository } from '../domain/ports/KnownLemmaRepository'
 import type { ReadingPositionRepository } from '../domain/ports/ReadingPositionRepository'
 import type { SessionRepository } from '../domain/ports/SessionRepository'
@@ -12,6 +14,8 @@ export interface Repositories {
   cards: CardRepository
   known: KnownLemmaRepository
   sessions: SessionRepository
+  diagnostics: DiagnosticsRepository
+  bookmarks: BookmarkRepository
   /** Not storage, but injected the same way and for the same reason. */
   clock: Clock
 }

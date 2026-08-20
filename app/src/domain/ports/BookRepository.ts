@@ -69,6 +69,9 @@ export interface BookRepository {
     keys: readonly LemmaKey[],
   ): Promise<Map<LemmaKey, LexiconEntry>>
 
+  /** A count, not the entries. Diagnostics only — cheaper than `getLexicon`. */
+  countLexiconEntries(id: BookId): Promise<number>
+
   /** Import, replacing any book already stored under the same id. */
   saveBundle(bundle: Bundle, importedAt: Date): Promise<void>
 

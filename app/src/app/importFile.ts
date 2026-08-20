@@ -9,9 +9,12 @@
  * which is what makes AirDrop's renaming harmless.
  */
 
+import { BundleFormatError, UnsupportedSchemaVersionError } from '../domain/bundle/parseBundle'
 import { parseBundle } from '../domain/bundle/parseBundle'
+import { KnownFormatError } from '../domain/bundle/parseKnown'
 import { parseKnownLemmas } from '../domain/bundle/parseKnown'
 import type { BookRepository } from '../domain/ports/BookRepository'
+import type { ImportLogOutcome } from '../domain/ports/DiagnosticsRepository'
 import type { KnownLemmaRepository } from '../domain/ports/KnownLemmaRepository'
 
 export type ImportOutcome =
@@ -98,7 +101,7 @@ async function importKnown(
   const before = await known.listAll()
   const added = lemmas.filter((lemma) => !before.has(lemma)).length
 
-  await known.add(lemmas)
+  await known.add(lemmas, 'seed')
   void requestPersistentStorage()
 
   return {
@@ -120,5 +123,55 @@ async function requestPersistentStorage(): Promise<void> {
     await navigator.storage?.persist?.()
   } catch {
     // Not available, or refused. Nothing to do about either.
+  }
+}
+
+/**
+ * Maps an `ImportOutcome` to the shape `DiagnosticsRepository` stores.
+ *
+ * These live here rather than in `domain/ports/DiagnosticsRepository.ts`
+ * because that type is deliberately its own thing, not a re-export of
+ * `ImportOutcome` — a domain port depending on an app-layer type would
+ * invert the dependency direction CLAUDE.md rule 4 exists to enforce. This
+ * file already owns and fully understands both shapes.
+ */
+export function importLogOutcomeForSuccess(outcome: ImportOutcome): ImportLogOutcome {
+  if (outcome.kind === 'book') {
+    return {
+      fileShape: 'book',
+      result: 'success',
+      bookId: outcome.bookId,
+      title: outcome.title,
+      chapterCount: outcome.chapterCount,
+      replaced: outcome.replaced,
+    }
+  }
+  return {
+    fileShape: 'known',
+    result: 'success',
+    inFile: outcome.inFile,
+    added: outcome.added,
+    total: outcome.total,
+  }
+}
+
+/**
+ * A `known.json` either parses in full or the whole import throws — there is
+ * no partial-rejection concept in the format, so a failure here means "this
+ * attempt failed, with this error," not a rejected-entries count.
+ */
+export function importLogOutcomeForFailure(error: unknown): ImportLogOutcome {
+  const fileShape: ImportLogOutcome['fileShape'] =
+    error instanceof KnownFormatError
+      ? 'known'
+      : error instanceof BundleFormatError || error instanceof UnsupportedSchemaVersionError
+        ? 'book'
+        : 'unrecognised'
+
+  return {
+    fileShape,
+    result: 'failure',
+    errorName: error instanceof Error ? error.constructor.name : 'UnknownError',
+    message: error instanceof Error ? error.message : String(error),
   }
 }

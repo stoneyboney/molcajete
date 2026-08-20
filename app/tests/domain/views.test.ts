@@ -9,6 +9,7 @@ import {
 } from '../../src/domain/view/chapterListView'
 import { buildGlossView } from '../../src/domain/view/glossView'
 import { buildLibraryView } from '../../src/domain/view/libraryView'
+import { buildNotizenView } from '../../src/domain/view/notizenView'
 import { readingFraction } from '../../src/domain/view/progress'
 
 describe('readingFraction', () => {
@@ -34,6 +35,67 @@ describe('buildLibraryView', () => {
   it('reports emptiness rather than leaving the screen to work it out', () => {
     expect(buildLibraryView([]).isEmpty).toBe(true)
     expect(buildLibraryView([]).rows).toEqual([])
+  })
+})
+
+describe('buildNotizenView', () => {
+  it('reports emptiness rather than leaving the screen to work it out', () => {
+    expect(buildNotizenView([], []).isEmpty).toBe(true)
+  })
+
+  it('resolves a bookmark against its book title', () => {
+    const view = buildNotizenView(
+      [
+        {
+          id: 1,
+          bookId: 'b1',
+          chapterIndex: 2,
+          paragraphId: 'c2p0',
+          text: 'nomás pa\' variar',
+          createdAt: new Date('2026-01-01'),
+        },
+      ],
+      [
+        {
+          id: 'b1',
+          title: 'Los de abajo',
+          author: 'Mariano Azuela',
+          language: 'es',
+          variant: 'es-MX',
+          totalTokens: 100,
+          uniqueLemmas: 50,
+          chapterCount: 42,
+          importedAt: new Date('2025-01-01'),
+        },
+      ],
+    )
+    expect(view.rows).toEqual([
+      {
+        id: 1,
+        bookId: 'b1',
+        bookTitle: 'Los de abajo',
+        chapterIndex: 2,
+        text: 'nomás pa\' variar',
+        createdAt: new Date('2026-01-01'),
+      },
+    ])
+  })
+
+  it('falls back to the raw book id when the book is gone', () => {
+    const view = buildNotizenView(
+      [
+        {
+          id: 1,
+          bookId: 'deleted-book',
+          chapterIndex: 0,
+          paragraphId: 'c0p0',
+          text: 'algo',
+          createdAt: new Date('2026-01-01'),
+        },
+      ],
+      [],
+    )
+    expect(view.rows[0]?.bookTitle).toBe('deleted-book')
   })
 })
 
@@ -200,6 +262,16 @@ describe('buildGlossView', () => {
   it('returns null for a key the lexicon slice does not hold', () => {
     expect(buildGlossView('m9999', undefined)).toBeNull()
   })
+
+  it('carries the global lemma id a card would be filed under', () => {
+    const view = buildGlossView('m1', entry({ lemma: 'Huizach' }))
+    expect(view?.lemmaId).toBe('huizach')
+  })
+
+  it('marks a closed-class word not cardable, same rule teachSet.ts uses', () => {
+    expect(buildGlossView('m1', entry({ pos: 'DET' }))?.cardable).toBe(false)
+    expect(buildGlossView('m1', entry({ pos: 'NOUN' }))?.cardable).toBe(true)
+  })
 })
 
 describe('routes', () => {
@@ -222,6 +294,7 @@ describe('routes', () => {
       chapterIndex: 2,
     }],
     ['#/wiederholen', { name: 'review' }],
+    ['#/diagnose', { name: 'diagnose' }],
   ]
 
   it.each(cases)('parses %s', (hash, route) => {

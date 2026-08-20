@@ -49,6 +49,11 @@ export class DexieCardRepository implements CardRepository {
     return this.database.cards.where('card.fsrs.due').belowOrEqual(now).count()
   }
 
+  async listAll(): Promise<SrsCard[]> {
+    const rows = await this.database.cards.toArray()
+    return rows.map((row) => row.card)
+  }
+
   async put(card: SrsCard): Promise<void> {
     await this.database.cards.put({ lemmaId: card.lemmaId, card })
   }

@@ -32,6 +32,8 @@
 
 import Dexie, { type Table } from 'dexie'
 import type { LemmaId } from '../domain/lemma'
+import type { ImportLogOutcome } from '../domain/ports/DiagnosticsRepository'
+import type { KnownLemmaSource } from '../domain/ports/KnownLemmaRepository'
 import type { TeachingSession } from '../domain/session/session'
 import type { SrsCard } from '../domain/srs/scheduler'
 import type { BookMeta, LemmaKey, LexiconEntry, Paragraph } from '../domain/types'
@@ -95,6 +97,44 @@ export interface CardRow {
 export interface KnownLemmaRow {
   lemmaId: LemmaId
   markedAt: Date
+  /**
+   * Added in version 4. Optional because Dexie does not backfill: rows
+   * written before this field existed come back as `source: undefined` on
+   * read — a third, honest "legacy" bucket in the diagnostics screen, the
+   * same convention `SrsCard.face` already uses for cards made before
+   * Phase 5, not a new pattern.
+   */
+  source?: KnownLemmaSource
+}
+
+/** Diagnostics only. See src/domain/ports/DiagnosticsRepository.ts. */
+export interface ErrorLogRow {
+  id?: number
+  at: Date
+  message: string
+  context: string
+}
+
+/** Diagnostics only. */
+export interface ImportLogRow {
+  id?: number
+  at: Date
+  outcome: ImportLogOutcome
+}
+
+/**
+ * SPEC §6.4's "note-to-self bookmark." Scoped to a book, unlike `cards` and
+ * `knownLemmas` — a bookmark's whole point is *where* in the text, so it has
+ * no meaning once its book is gone (`DexieBookRepository.deleteBook` removes
+ * a book's bookmarks along with everything else book-scoped).
+ */
+export interface BookmarkRow {
+  id?: number
+  bookId: string
+  chapterIndex: number
+  paragraphId: string
+  text: string
+  createdAt: Date
 }
 
 export class MolcajeteDatabase extends Dexie {
@@ -106,6 +146,9 @@ export class MolcajeteDatabase extends Dexie {
   sessions!: Table<SessionRow, [string, number]>
   cards!: Table<CardRow, string>
   knownLemmas!: Table<KnownLemmaRow, string>
+  errorLog!: Table<ErrorLogRow, number>
+  importLog!: Table<ImportLogRow, number>
+  bookmarks!: Table<BookmarkRow, number>
 
   constructor(name = 'molcajete') {
     super(name)
@@ -132,7 +175,30 @@ export class MolcajeteDatabase extends Dexie {
     this.version(3).stores({
       cards: 'lemmaId, card.fsrs.due',
     })
+    // Diagnostics, pre-Phase-6. Two device-local ring buffers — see
+    // src/domain/ports/DiagnosticsRepository.ts — plus `source` on
+    // `knownLemmas` rows (declared on the type above; needs no store-string
+    // change, since Dexie's `.stores()` declares indexes, not row shape). No
+    // upgrade function: both new tables start empty, and a `knownLemmas` row
+    // from before this version simply reads back with `source: undefined`.
+    this.version(4).stores({
+      errorLog: '++id',
+      importLog: '++id',
+    })
+    // Phase 6. `bookId` indexed so a book's bookmarks can be cleared without a
+    // full-table scan, same as every other book-scoped store. No upgrade
+    // function: the table starts empty.
+    this.version(5).stores({
+      bookmarks: '++id, bookId',
+    })
   }
 }
 
 export const db = new MolcajeteDatabase()
+
+/**
+ * Compared against `db.verno` by the diagnostics screen. Bump this by hand
+ * whenever a `.version()` call above is added — the two can only disagree if
+ * one of them was forgotten.
+ */
+export const EXPECTED_SCHEMA_VERSION = 5

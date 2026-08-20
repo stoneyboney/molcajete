@@ -161,14 +161,18 @@ export class DexieBookRepository implements BookRepository {
     return found
   }
 
+  async countLexiconEntries(id: BookId): Promise<number> {
+    return this.database.lexicon.where({ bookId: id }).count()
+  }
+
   async saveBundle(bundle: Bundle, importedAt: Date): Promise<void> {
     const bookId = bundle.book.id
-    const { books, chapters, lexicon, positions, chapterVocab, sessions } =
+    const { books, chapters, lexicon, positions, chapterVocab, sessions, bookmarks } =
       this.database
 
     await this.database.transaction(
       'rw',
-      [books, chapters, lexicon, positions, chapterVocab, sessions],
+      [books, chapters, lexicon, positions, chapterVocab, sessions, bookmarks],
       async () => {
         // Re-importing a book replaces it. Anything else leaves a chapter from
         // the old build sitting next to the lexicon of the new one.
@@ -209,11 +213,11 @@ export class DexieBookRepository implements BookRepository {
   }
 
   async deleteBook(id: BookId): Promise<void> {
-    const { books, chapters, lexicon, positions, chapterVocab, sessions } =
+    const { books, chapters, lexicon, positions, chapterVocab, sessions, bookmarks } =
       this.database
     await this.database.transaction(
       'rw',
-      [books, chapters, lexicon, positions, chapterVocab, sessions],
+      [books, chapters, lexicon, positions, chapterVocab, sessions, bookmarks],
       () => this.clear(id),
     )
   }
@@ -224,6 +228,10 @@ export class DexieBookRepository implements BookRepository {
    * `cards` and `knownLemmas` are untouched. Removing a book removes its text;
    * it does not unlearn its vocabulary, and re-importing it must not re-teach
    * words you already know.
+   *
+   * `bookmarks` *is* cleared here, unlike cards/knownLemmas — a bookmark's
+   * `paragraphId` only means something against the bundle build it was saved
+   * from, the same reason `positions` is already cleared on a re-import.
    */
   private async clear(id: BookId): Promise<void> {
     await this.database.books.delete(id)
@@ -232,6 +240,7 @@ export class DexieBookRepository implements BookRepository {
     await this.database.positions.where({ bookId: id }).delete()
     await this.database.chapterVocab.where({ bookId: id }).delete()
     await this.database.sessions.where({ bookId: id }).delete()
+    await this.database.bookmarks.where({ bookId: id }).delete()
   }
 
   private async putChunked<T, K>(table: Table<T, K>, rows: T[]): Promise<void> {
