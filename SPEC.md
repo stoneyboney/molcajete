@@ -15,7 +15,7 @@ Bundle extension: `.molcajete.json`.
 
 ## 1. The core idea
 
-Every existing reader app is *reactive*: you read, you hit a wall, you tap the word, you review it later. Molcajete is *proactive*: before you are allowed into a chapter, the app teaches you the vocabulary that chapter actually requires, using spaced-repetition flashcards. You then read the chapter with ~98% word coverage, which is the threshold at which reading becomes pleasant rather than effortful.
+Every existing reader app is *reactive*: you read, you hit a wall, you tap the word, you review it later. Molcajete is *proactive*: before you are allowed into a chapter, the app teaches you the vocabulary that chapter actually requires, using spaced-repetition flashcards. You then read the chapter with ~90% word coverage, which is the threshold at which reading becomes pleasant rather than effortful.
 
 **The one-sentence spec:** *EPUB in → chapter-scoped flashcard sessions → comfortable reading, offline, on the sofa and on the train.*
 
@@ -50,16 +50,19 @@ Every existing reader app is *reactive*: you read, you hit a wall, you tap the w
 The single most important design decision: **split the system in two.**
 
 ```
-┌─────────────────────────────────────┐
-│  PREP PIPELINE (Python, desktop)    │
-│  Run once per book. Network OK.     │
-│                                     │
-│  EPUB ──▶ chapters ──▶ lemmas       │
-│       ──▶ frequency ──▶ glosses     │
-│       ──▶ book.molcajete.json          │
-└──────────────┬──────────────────────┘
-               │  (AirDrop / iCloud Drive / file picker)
-               ▼
+PREP PIPELINE (Python, desktop). Run once per book. Network OK.
+
+  molcajete-prep   (sibling repo, language half)
+  spaCy lemmatization, lexicon, §5 teach rules, glossing, Anki seed
+        │
+        ▼  molcajete-book depends on this
+  molcajete-book   (this repo's /pipeline, book half)
+  EPUB ──▶ chapters, bundle schema + validation, report, the two CLIs
+        │
+        ▼
+  book.molcajete.json
+        │  (AirDrop / iCloud Drive / file picker)
+        ▼
 ┌─────────────────────────────────────┐
 │  READER PWA (TypeScript, on device) │
 │  Zero network. IndexedDB.           │
@@ -68,11 +71,18 @@ The single most important design decision: **split the system in two.**
 └─────────────────────────────────────┘
 ```
 
+molcajete-book depends on molcajete-prep — it calls into the language half for
+lemmatization, the lexicon and glossing, but owns nothing about Spanish itself.
+molcajete-prep knows nothing about books or EPUBs, which is what lets a second
+reader (Rocola, a Spanish song-lyrics app) depend on it too, rather than fork
+it.
+
 **Why this split matters:**
 
 1. All the hard linguistic work (lemmatization, dictionary lookup, frequency ranking) happens where the mature Python libraries live, on a machine with a keyboard and no battery anxiety.
 2. The app becomes almost trivially simple — it renders pre-computed JSON. No EPUB parser on device, no NLP on device, no network.
 3. The bundle format is the stable contract. **If you later rewrite the app natively in Swift, the prep pipeline is untouched and the bundles still work.** This is the migration insurance.
+4. The prep pipeline itself now splits along the same seam a second time: language logic that has nothing to do with books (molcajete-prep) versus book logic that has nothing to do with Spanish specifically (molcajete-book). Neither half needs to change when the other is rewritten.
 
 ---
 
@@ -160,13 +170,69 @@ unknown(chapter) = lemmas(chapter) − knownLemmas(user)
 
 ### Step 2 — Classify each unknown lemma
 
+Checked in this order:
+
 | Condition | Action |
 |---|---|
+| Proper noun (`p == "PROPN"`) | **Skip entirely** — no card, no gloss needed |
+| Closed-class part of speech (`p` in `ADP AUX CCONJ DET NUM PART PRON PUNCT SCONJ SYM X`) | **Gloss only** — never taught, however common. A flashcard does not teach `de`; that is grammar, and it arrives from reading, not from a card. |
 | `bookCount >= 3` | **Teach** — you will meet it repeatedly, a card pays for itself |
 | `zipf >= 3.5` (roughly top 5000 words) | **Teach** — high general utility |
 | `mexicanism == true` and `bookCount >= 2` | **Teach** — this is why you're here |
-| Proper noun (`p == "PROPN"`) | **Skip entirely** — no card, no gloss needed |
 | Everything else | **Gloss only** — tap-to-reveal inline, no card |
+
+The closed-class exclusion is not cosmetic. Unmodified, `zipf >= 3.5` catches
+every closed-class word and `bookCount` sorts them to the top of any real
+book's teach set: measured on chapter 0 of `las-noches-mejicanas`, that made
+16 of the first 18 cards function words — `el`, `de`, `él`, `a`, `y`, `en`,
+`uno`, `que`. None of those are worth a flashcard; all of them are worth
+glossing, since the reader should still be able to tap one and see it.
+
+`INTJ` is deliberately **not** in the excluded set. An interjection is exactly
+the vocabulary this app exists for — `¡órale!` is worth a card in a way that
+`de` is not.
+
+This rule is implemented identically in `app/src/domain/teachSet.ts` and in
+`molcajete-prep`'s `classify.py` — the same rule written twice on purpose,
+kept in step by comment, with a Swift port to be the third — because the app
+and the pipeline each classify lemmas independently (see the note on
+`firstChapter` below) and a rule that only one of them applied would make
+the two disagree about what the reader has already been taught.
+
+### A lemma is taught where it occurs, not where it debuts
+
+The pipeline bakes a `teachSet` into each chapter of the bundle, computed
+against `firstChapter`: a lemma's card belongs to the first chapter it
+appears in, because `classify.py` has no way to know what the reader has
+already learned — it has no card store to consult, only the book.
+
+The app does have a card store, and uses it: `selectTeachSet` recomputes the
+teach set live, every time a chapter is opened, against whatever is actually
+known or already being learned *right now*. A lemma is therefore taught in
+whichever chapter the reader actually first meets it, not necessarily the
+chapter it debuted at prep time — reopening chapter 3 after skipping chapter
+0 teaches chapter 0's vocabulary that chapter 3 reuses, rather than silently
+assuming it. **The app never reads the bundle's baked `teachSet`.** That field
+exists for the pipeline's own report, and a report that disagreed with the
+app would be worse than no report.
+
+This also means "carded" and "known" are different tests, and the algorithm
+depends on keeping them apart:
+
+- **Carded** — a lemma with a card, however new. It is excluded from being
+  taught *again* (Step 1's `unknown` set has already removed it once it has
+  a card), but it does **not** count toward coverage (§5 Step 4) until it
+  matures.
+- **Known** — a lemma with a *matured* card (§7: `state == Review && stability
+  > 21 days`), or one marked known directly via "Ich kenne das" or the Anki
+  seed (§8). Only known lemmas stop appearing in `unknown(chapter)` for
+  coverage purposes.
+
+Collapsing the two breaks one thing or the other: treating "carded" as
+"known" would count a word as covered the moment its first card is created,
+before it is actually learned; treating "known" as the only thing that
+prevents re-teaching would put a word the reader studied yesterday back into
+today's session.
 
 ### Step 3 — Cap and split
 - Hard cap: **18 new cards per teaching session**
@@ -178,7 +244,7 @@ Before unlocking a chapter, compute projected coverage:
 ```
 coverage = (tokens whose lemma ∈ known ∪ justTaught) / totalTokens
 ```
-Default target: **0.98**. If below target after the teach set, warn but allow entry — never hard-block. This is a personal tool; you are an adult.
+Default target: **0.90** (see §13 decision 2 — this matches FSRS's own default retention target, reused here as the display threshold). If below target after the teach set, warn but allow entry — never hard-block. This is a personal tool; you are an adult.
 
 ---
 
@@ -262,14 +328,31 @@ Re-runnable at any time; merges rather than replaces.
 
 ## 9. Tech stack
 
-### Prep pipeline (Python 3.11+)
+### Prep pipeline (Python 3.11+, two packages — see §3)
+
+`molcajete-book` (this repo's `/pipeline`, the book half):
+
 | Concern | Library |
 |---|---|
-| EPUB parsing | `ebooklib` + `BeautifulSoup` |
-| Tokenize + lemmatize | `spaCy` with `es_core_news_sm` |
-| Frequency data | `wordfreq` (`zipf_frequency(word, 'es')`) |
-| DE/EN glosses | Wiktionary extracts from kaikki.org (`kaikki.org/dictionary/Spanish`) |
-| Gloss fallback + Mexican flagging | Claude API, batched (see §11) |
+| EPUB parsing | `ebooklib` (`>=0.18`) + `BeautifulSoup` (`>=4.12`) |
+| Bundle schema validation | `molcajete_book.schema`, hand-written |
+
+`molcajete-prep` (sibling repo, the language half — `molcajete-book` depends
+on it, editable, while both repos are still moving):
+
+| Concern | Library |
+|---|---|
+| Tokenize + lemmatize | `spaCy` (`>=3.8,<3.9`) with `es_core_news_sm` 3.8.0 |
+| Frequency data | `wordfreq` (`>=3.1`, `zipf_frequency(word, 'es')`) |
+| DE/EN glosses | Wiktionary extracts from kaikki.org, hand-rolled streaming — no dedicated package |
+| Gloss fallback + Mexican flagging | Claude API via `anthropic` (`>=0.69`), batched (see §11); or a local Ollama model via hand-rolled `urllib`, no SDK |
+
+`es_core_news_sm` ships as a GitHub wheel, not a PyPI package. Because
+`tool.uv.sources` is not carried in published metadata, **both** packages
+must declare the dependency *and* its GitHub wheel URL — inheriting the bare
+requirement from `molcajete-prep` resolves against PyPI instead and fails.
+This is the detail most likely to bite when a third consumer of
+`molcajete-prep` appears.
 
 ### Reader PWA
 | Concern | Choice |
@@ -353,6 +436,16 @@ EPUB → chapters → tokens → lemmas → JSON, with frequency from `wordfreq`
 **Phase 2 — Glosses**
 Wire in Wiktionary extracts, DE and EN. Add Claude batch fallback. Success: >95% of teach-set lemmas have a German gloss.
 
+*Status: the numeric target is met (95.3% on `Los de abajo`), but the phase
+is not closed.* The local-model fallback still fabricates plausible-looking
+German glosses for lemmas that may not be real Spanish words at all, and
+nothing downstream can detect one — measured at 76% of zipf-0.00 lemmas on
+`Los de abajo`, worse than the 53% seen on an earlier, smaller sample. See
+`CLAUDE.md`'s Phase 2 notes for the full measurement. Claude's rejection rate
+on the same stratum is still unmeasured (no credentials available when this
+was tested) — that comparison is what would tell a local-model weakness from
+a prompt weakness, and is what would actually close this phase.
+
 **Phase 3 — Reader shell**
 React app, import a bundle, render chapters, tap-to-gloss. No SRS yet. Success: you read chapter one on your iPad, offline.
 
@@ -375,7 +468,31 @@ Coverage display, reading statistics, export mined words back to Anki as TSV.
 
 3. **No inline translation in the reader.** Every gloss is tap-to-reveal. Build one exception: a **"reveal all glosses"** toggle intended for a second pass through an already-read chapter. It must be off by default and must not persist across chapters.
 
-4. **First text: `Los de abajo` by Mariano Azuela (1915, public domain).** Available from Project Gutenberg, genuinely Mexican, and dense with revolutionary-era regional vocabulary — it stress-tests the `mexicanism` flagging immediately. Use it for all pipeline development. `Fiesta en la madriguera` becomes the first real read once a DRM-free EPUB is in hand.
+4. **First text: `Los de abajo` by Mariano Azuela (1915, public domain in Germany and the US).** Genuinely Mexican and dense with revolutionary-era regional vocabulary — it stress-tests the `mexicanism` flagging immediately. Use it for all pipeline development. `Fiesta en la madriguera` becomes the first real read once a DRM-free EPUB is in hand.
+
+   **It is not on Project Gutenberg.** Gutenberg carries only the 1929
+   English translation (*The Underdogs*, ebook 549); the Spanish original is
+   absent from Gutenberg, Spanish Wikisource, and textos.info, and the copies
+   on the Internet Archive are DRM-locked scans of modern in-copyright
+   editions. The novel itself has been public domain the whole time — Azuela
+   died in 1952, the novel was published in 1915 — the obstacle was only ever
+   finding a clean DRM-free EPUB. One eventually turned up: Marta Portal's
+   critical edition, now built from `pipeline/sources/Los de abajo.epub` (see
+   `pipeline/README.md`'s "Critical editions" section for the exact
+   invocation).
+
+   That edition is also why `build_bundle.py` has
+   `--include-documents`/`--exclude-documents`. A critical edition packs its
+   apparatus — introduction, endnotes, analysis, biography, bibliography — in
+   the same EPUB spine as the novel; here, three documents of novel (~244 KB)
+   against nine of apparatus (~200 KB). Left unfiltered, that apparatus
+   becomes chapters named things like *Bibliografía* and inflates the
+   `bookCount` that decides what gets taught, on prose the reader is never
+   meant to read. The same edition needed two smaller, related fixes:
+   `<sup>` footnote markers (which otherwise extract inline as
+   `federales[54]`) are treated as non-prose and dropped, and chapter titles
+   are read from the EPUB's table of contents rather than the heading text,
+   because a packed part's headings are often bare, repeating numerals.
 
 ### Note on source files
 
