@@ -134,6 +134,96 @@ Code, comments, commit messages, and this documentation are in English.
 
 ## Current phase
 
+**Phase 6 — Polish. Built and green. Not verified on the device yet.**
+
+`npm test` in `/app` is 227 tests; `npm run build` is clean. Four jobs, per
+SPEC §12 plus SPEC §6.4:
+
+1. **`Add card` button**, in the gloss sheet. Creates the FSRS card directly
+   (`newCard` + `cards.put`), bypassing the teaching-session machinery
+   entirely — there's no queue or phase involved in a single ad-hoc add.
+   Closed-class parts of speech get no button at all, silently, the same
+   rule `teachSet.ts` already applies to automatic teach sets — reused via
+   `GlossView.cardable`. An already-carded lemma shows status text instead;
+   `CardRepository.put` has no dedup of its own, so the reader now tracks
+   carded lemmas locally to guard against silently resetting a schedule.
+2. **A phrase bookmark**, SPEC §6.4's "long-press → select phrase, no
+   translation, just a note-to-self." Built on the browser's own
+   press-and-hold text selection rather than a custom gesture — a
+   `selectionchange` listener shows a small pill ("Notiz speichern") when the
+   selection is non-empty and inside the reader, saving whatever
+   `Selection.toString()` returns. This was the right call for a structural
+   reason, not just a simpler one: untappable tokens (whitespace, punctuation,
+   proper nouns) are merged into plain text nodes with no per-word DOM anchor
+   (`readerView.ts`'s run-merging), so there is no way to address an
+   arbitrary multi-word phrase through the existing `[data-t]` tap model —
+   native selection needs none of that addressing. New Dexie table
+   `bookmarks` (version 5), book-scoped on purpose (unlike `cards`/
+   `knownLemmas`) and cleared when its book is deleted or re-imported, the
+   same reason `positions` already is.
+3. **`#/statistik`**, reading statistics, snapshot only — vocabulary known,
+   cards created per week, coverage and chapters-opened per book. Nothing
+   here is a stored trend: every number is computed live from data that
+   already exists, which was a deliberate choice against CLAUDE.md's
+   non-goal of anything that reads as a progress-tracker. `ReadingPosition`
+   is last-touched, not a completion flag, so "chapters opened" is labelled
+   as exactly that, not "chapters finished."
+4. **Anki TSV export**, from the same screen. "Mined" = every `SrsCard` with
+   a face and a German gloss — unambiguous under the current design, since
+   an Anki seed import never creates a card (it only ever touches
+   `KnownLemmaRepository`), so `CardRepository.listAll()` is already exactly
+   "vocabulary Molcajete taught you," with no risk of re-exporting something
+   that came from Anki in the first place. Two fields (Front/Back) to match
+   Anki's stock `Basic` note type rather than assume a custom one exists.
+   The `#deck:`/`#notetype:` header values are a reasoned default, not a
+   verified one — nothing in either repo has ever checked a hand-built TSV
+   against Anki's real importer, and the two existing synthetic fixtures in
+   `molcajete-prep` disagree with each other on header syntax. Worth
+   checking on a real Anki install.
+
+**CLAUDE.md previously undercounted this phase.** An earlier note here said
+the `Add card` button was "the only §6 item still missing" — SPEC §6.4's
+phrase-bookmark interaction was also never built and was never documented as
+deferred. Both are built now.
+
+**Two genuinely new interaction patterns need the device pass specifically,
+not just desktop Chrome**: the selection-based bookmark gesture (iOS's
+press-and-hold text selection may behave differently from desktop click-drag
+selection), and the `navigator.share`/download-link export fallback (iOS
+Safari's download-attribute behaviour inside a standalone PWA is known to be
+inconsistent). Outstanding, in order:
+
+1. Tap a word, add a card, confirm the sheet shows it already carded on a
+   second open, and confirm a closed-class word shows no button.
+2. Press and hold to select a phrase, confirm the "Notiz speichern" pill
+   appears and the saved note shows up in `#/notizen` with a working link
+   back to the chapter.
+3. Open `#/statistik` and sanity-check the numbers against the library.
+4. Export a TSV via the button and confirm it actually reaches Files/Anki on
+   the device, not just that the button doesn't crash.
+5. Airplane mode, then repeat. Hard constraint 1.
+
+---
+
+**The device pass is done. Phase 4 and Phase 5 are both verified — all five
+items of the outstanding checklist passed on the iPad:** a bundle and a
+`known.json` imported through the same button, `Los de abajo` opened at a
+realistic card count rather than 263, a teaching session survived being
+killed mid-recall and resumed on the same card, `Wiederholen` offered graded
+cards when due, and all of it kept working in airplane mode. That last one is
+hard constraint 1's whole point, confirmed a second time — Phase 3 confirmed
+it for reading, this confirms it for teaching and review too.
+
+A `#/diagnose` screen exists now, reachable but understated from the
+library, built in the same session as the pass to make the device
+debuggable blind — no console, no dev tools unless tethered. Read-only: Dexie
+schema version against what the code expects, service worker state, per-book
+stats, known-lemma counts split by how they arrived (seed / "Ich kenne das" /
+matured card), FSRS card counts by state and the next due time, any
+persisted session, the last few imports, and a local ring-buffer error log.
+It is not telemetry — nothing on that screen leaves the device, consistent
+with hard constraint 1.
+
 **The prep pipeline is now two packages.** The language half — spaCy, the
 lexicon, the SPEC §5 teach rules, glossing, the Anki seed, the gloss trial —
 lives in `../molcajete-prep`, a sibling repo and an installable package, so that
@@ -179,13 +269,10 @@ scope — Rocola passes songs where Molcajete passes chapters. There is no
 `coverage` to move: it exists only in `app/src/domain/`, so Rocola needs a port
 rather than an import.
 
-**Phase 5 — Anki seed + review screen. Built and green. Not verified on the
-device yet.**
+**Phase 5 — Anki seed + review screen. Complete.**
 
 `npm test` in `/app` is 197 tests; `uv run pytest` is 384 in `molcajete-prep`
-and 96 in `/pipeline`. The
-device pass now owes two phases at once — see the Phase 4 note below, which is
-still outstanding.
+and 96 in `/pipeline`. Verified on the iPad — see the top of this section.
 
 Three things landed:
 
@@ -241,14 +328,13 @@ implementations; the *other* divergence stays and is documented in the module
 docstring, because `teachSet.ts` teaching a lemma where it occurs rather than at
 `firstChapter` depends on a card store the pipeline does not have.
 
-**Phase 4 — Teaching loop. Built and green. Not verified on the device yet.**
+**Phase 4 — Teaching loop. Complete.**
 
 `npm test` in `/app` is 167 tests across 11 files. The domain layer went in
-first and the UI after it, per rule 3. What is *not* verified is the Dexie half
-and the rendering: `tests/teachingLoop.test.ts` runs the whole flow over
-in-memory ports, so the schema, the migration and the screens have been
-typechecked and built but not yet exercised on hardware. That is the outstanding
-item for this phase — the same boundary Phase 3 closed on the iPad.
+first and the UI after it, per rule 3. `tests/teachingLoop.test.ts` runs the
+whole flow over in-memory ports; the Dexie half and the rendering were the
+outstanding piece, and the device pass — see the top of this section — closed
+it, the same boundary Phase 3 closed on the iPad.
 
 Six things settled while building it:
 
@@ -290,21 +376,7 @@ this by teaching `el`.** There is a test pinning the ceiling.
 **Windowing is still not built and still not needed.** Nothing in Phase 4 adds a
 span per token.
 
-**Next: Phase 6 — Polish**, and before it, a device pass that is now two
-phases behind.
-
-The outstanding verification, in order:
-
-1. Import a bundle and a `known.json` on the iPad. Both go through the same
-   button; the seed should report how many lemmas were new.
-2. Open `Los de abajo` and check chapter 1 is a handful of cards rather than
-   263 — the number depends on your deck, and the table above says where you
-   should land.
-3. Run a session, kill the tab mid-recall, confirm it resumes on the same card.
-4. Grade some cards and check `Wiederholen` offers them when due. Remember the
-   learning steps: a card answered `Gut` today is due again in ten minutes, not
-   tomorrow.
-5. Airplane mode, then repeat. Hard constraint 1.
+**Next: Phase 6 — Polish.**
 
 **The seed path can be exercised without a real deck.**
 `make_test_deck.py` writes 200 of the commonest Spanish words as a synthetic
