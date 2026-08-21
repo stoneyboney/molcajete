@@ -41,6 +41,17 @@ _WHITESPACE_RE = re.compile(r"\s+")
 # they corrupt both the lemma and the surface form.
 _SOFT_HYPHEN = "­"
 
+# ebooklib only classifies an item as `ITEM_DOCUMENT` when its declared media
+# type is exactly `application/xhtml+xml` (ebooklib/epub.py's `read_epub`,
+# `elif media_type == "application/xhtml+xml"`). `text/html` is valid EPUB3
+# per the spec but not what ebooklib expects, and a spine document typed that
+# way comes back as `ITEM_UNKNOWN` — dropped by a `get_type()` check, along
+# with every other document sharing its media type. An OCR-generated edition
+# of `El principito` types all 64 of its pages this way; unfiltered, the whole
+# book disappears with "yielded no chapters with prose in them" and no other
+# clue why.
+_DOCUMENT_MEDIA_TYPES = frozenset({"application/xhtml+xml", "text/html"})
+
 
 @dataclass(frozen=True)
 class ChapterSource:
@@ -230,13 +241,23 @@ def _toc_titles(book: epub.EpubBook) -> dict[str, str]:
 
 
 def _spine_documents(book: epub.EpubBook) -> list[epub.EpubItem]:
-    """Content documents in reading order, minus navigation and cover pages."""
+    """Content documents in reading order, minus navigation and cover pages.
+
+    Accepts `ITEM_DOCUMENT` items as ebooklib defines them, plus anything
+    else whose own media type says it is a content document — see
+    `_DOCUMENT_MEDIA_TYPES` for why the second check exists.
+    """
     documents = []
     for idref, _linear in book.spine:
         item = book.get_item_with_id(idref)
-        if item is None or item.get_type() != ebooklib.ITEM_DOCUMENT:
+        if item is None:
             continue
         if isinstance(item, (epub.EpubNav, epub.EpubCoverHtml)):
+            continue
+        is_document = item.get_type() == ebooklib.ITEM_DOCUMENT or (
+            item.media_type or ""
+        ) in _DOCUMENT_MEDIA_TYPES
+        if not is_document:
             continue
         documents.append(item)
     return documents

@@ -356,3 +356,28 @@ class TestGutenbergBoilerplate:
         without = extract_chapters(str(fixture_epub), keep_boilerplate=True)
 
         assert with_stripping == without
+
+
+class TestNonConformantMediaType:
+    """`El principito`: an Internet Archive `hocr-to-epub` scan whose pages are
+    all typed `text/html`. ebooklib only classifies `application/xhtml+xml` as
+    a content document, so every page came back `ITEM_UNKNOWN` and the whole
+    book disappeared with "yielded no chapters with prose in them" — nothing
+    pointed at the media type as the cause.
+    """
+
+    def test_a_text_html_page_is_still_extracted(self, ocr_edition_epub):
+        chapters = extract_chapters(str(ocr_edition_epub))
+
+        assert len(chapters) == 2
+        assert chapters[1].paragraphs == ("Los soldados quedaron abajo, perdidos.",)
+
+    def test_conformant_and_nonconformant_pages_extract_identically(
+        self, ocr_edition_epub
+    ):
+        chapters = extract_chapters(str(ocr_edition_epub))
+
+        # Same shape either way — the media type is a parsing detail, not
+        # something that should show up in the extracted prose.
+        assert chapters[0].paragraphs == ("El caballo subió la sierra.",)
+        assert chapters[1].paragraphs == ("Los soldados quedaron abajo, perdidos.",)

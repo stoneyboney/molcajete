@@ -9,6 +9,7 @@ sys.path.insert(0, str(Path(__file__).parent / "fixtures"))
 
 from fixture_book import CHAPTERS, build_fixture_epub  # noqa: E402
 from fixture_critical_edition import build_critical_edition_epub  # noqa: E402
+from fixture_ocr_edition import build_ocr_edition_epub  # noqa: E402
 
 # `nlp`, `no_real_extracts` and `no_shared_cache` are not here. They come from
 # molcajete-prep's pytest plugin, because a suite that builds bundles needs
@@ -28,6 +29,12 @@ def critical_edition_epub(tmp_path_factory: pytest.TempPathFactory) -> Path:
     return build_critical_edition_epub(
         tmp_path_factory.mktemp("epub") / "critical-edition.epub"
     )
+
+
+@pytest.fixture(scope="session")
+def ocr_edition_epub(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    """A scanned edition whose pages are typed `text/html`, not `application/xhtml+xml`."""
+    return build_ocr_edition_epub(tmp_path_factory.mktemp("epub") / "ocr-edition.epub")
 
 
 @pytest.fixture(scope="session")

@@ -215,6 +215,35 @@ editions. The novel itself is public domain in Germany (Azuela died 1952) and
 the US (published 1915) — the obstacle was only ever finding a clean DRM-free
 EPUB.
 
+### On `El principito`
+
+An Internet Archive scan (`hocr-to-epub`), Spanish translation, DRM-free.
+Exposed two things worth knowing about before building another scanned
+edition:
+
+1. **Its pages are typed `text/html`, not `application/xhtml+xml`.**
+   `ebooklib` only classifies the latter as a content document; a `text/html`
+   page comes back `ITEM_UNKNOWN` and was silently dropped, spine and all —
+   the whole book disappeared with `yielded no chapters with prose in them`
+   and nothing pointing at the media type as the cause. Fixed generally in
+   `_spine_documents` (`molcajete_book/epub.py`), not just for this book: it
+   now also accepts a document by its own declared media type, so any future
+   EPUB with the same non-conformance is unaffected. `tests/test_epub.py`'s
+   `TestNonConformantMediaType` pins it.
+2. **`notice.html` is Internet Archive's own English scanning disclaimer**,
+   present in every book their pipeline produces this way — not a book
+   document, but nothing marks it as licence text the way Project Gutenberg's
+   `*** START/END ***` markers do, so `strip_gutenberg_boilerplate` doesn't
+   touch it. Left in, it taught English words ("the" → "der Artikel") as
+   Spanish vocabulary. Excluded the same way a critical edition's apparatus
+   is:
+
+   ```bash
+   uv run python build_bundle.py "sources/El principito.epub" \
+       --exclude-documents 'notice*' \
+       --gloss-provider ollama
+   ```
+
 Manuel Payno's *Las noches mejicanas* remains a useful second text, and is one
 `curl` away:
 
